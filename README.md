@@ -1,4 +1,4 @@
-# HhHeterochrony_CardiacFields
+# Hedgehog-associated heterochrony and cardiac progenitor fields' establishment
 
 This repo is associated with the analysis of the impact of Hedgehog signaling in the early heart fields establishment.
 
