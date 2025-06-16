@@ -1,0 +1,95 @@
+```{r}
+library(circlize)
+```
+
+```{r}
+hh_activity <- list(Hh_activity = c("Gli1", "Hhip", "Ptch1"))
+
+v6.1 <- AddModuleScore_UCell(v6.1, hh_activity, assay='RNA')
+```
+
+
+```{r}
+v6.1[[]] %>%
+  ggplot(aes(x= CM_UCell, y = Hh_activity_UCell, color = Avg_pseudotime.scaled)) +
+  geom_point()
+
+
+v6.1[[]] %>%
+  ggplot(aes(x= CM_UCell_kNN, y = Hh_activity_UCell_kNN, color = Avg_pseudotime.scaled)) +
+  geom_point()
+```
+```{r}
+v6.1 <- SmoothKNN(v6.1,
+                           signature.names = c("Hh_activity_UCell", "CM_UCell"),
+                           reduction="harmony",
+                  k=20, decay = 1e-10000)
+```
+
+```{r, fig.width=5, fig.height=5}
+v6.1[[]] %>%
+  ggplot(aes(x= CM_UCell_kNN, y = Hh_activity_UCell_kNN, color = Avg_pseudotime.scaled)) +
+  geom_point() +
+  theme_minimal()+
+  scale_color_gradient(low = "gray", high = "#FFEA46FF", breaks = c(0,0.5, 1)) +
+  theme(axis.ticks = element_blank(), plot.background = element_blank(), panel.grid = element_blank()) +
+  border() + 
+  labs(x='CM score', y= 'Hh activity score', color = 'Pseudotime') +
+  ylim(0, 0.2) + xlim(0, 0.8) +
+  coord_equal(ratio = 0.8/0.2)
+ggsave("plots/scatter_hhactivity_cmscore.png", width = 5, height = 5, bg='transparent')
+```
+
+```{r, fig.width=5, fig.height=5}
+v6.1[[]] %>%
+  arrange(Hh_activity_UCell_kNN) %>%
+  ggplot(aes(y= CM_UCell_kNN, x = Avg_pseudotime.scaled, color = Hh_activity_UCell_kNN)) +
+  geom_point() +
+  theme_minimal()+
+  scale_color_gradient(low = "gray", high = "#FFEA46FF", breaks = c(0,0.16), labels = c("low", "high")) +
+  theme(axis.ticks = element_blank(), plot.background = element_blank(), panel.grid = element_blank()) +
+  border() +
+  labs(x='Pseudotime', y= 'CM score', color = 'Hh activity score') +
+  ylim(0, 0.8) +
+  coord_fixed(ratio = 1/0.8)
+ggsave("plots/scatter_cmscore_pseudotime.png", width = 5, height = 5, bg='transparent')
+```
+
+
+
+
+How about smoothing the scores with magic
+
+```{r}
+library(Rmagic)
+library(SingleCellExperiment)
+library(tidyverse)
+library(reticulate)
+library(viridis)
+library(Seurat)
+use_condaenv('/project/imoskowitz/itarampoulous/B-CondaEnvs/Pymagic')
+```
+```{r}
+scores_matrix <- dplyr::select(v6.1[[]], CM_UCell, Hh_activity_UCell)
+scores_matrix_afterMAGIC_auto <- magic(scores_matrix, genes = "all_genes", t='auto') # selected t =11
+scores_matrix_afterMAGIC_auto$operator
+```
+
+```{r}
+scores_matrix_afterMAGIC_auto$result %>%
+  ggplot(aes(x= CM_UCell, y = Hh_activity_UCell)) +
+  geom_point()
+```
+
+```{r}
+
+CM_markers <- list(CM = c("Myl7", "Ttn", "Myh6", "Tnnc1", "Nkx2-5", "Actc1"))
+v6.1 <- AddModuleScore(v6.1, CM_markers, assay="RNA")
+```
+
+```{r}
+v6.1[[]] %>%
+  ggplot(aes(x= Cluster1, y = Hh_activity1, color = Avg_pseudotime.scaled)) +
+  geom_point()
+```
+

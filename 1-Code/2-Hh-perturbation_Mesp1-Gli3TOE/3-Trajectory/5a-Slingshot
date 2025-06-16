@@ -1,0 +1,169 @@
+```{r, warning=FALSE, message=FALSE}
+library(Seurat)
+library(tidyverse)
+library(slingshot)
+library(scater)
+library(viridis)
+library(patchwork)
+library(ggpubr)
+library(SingleCellExperiment)
+library(purrr)
+library(condiments)
+source("/project/imoskowitz/wiktor/3-code/1-seurat/ggplot_themes.R")
+```
+
+```{r}
+v6.1 <-  readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V6/V6.1_Current/v6.1.rds")
+v6.1_sce <- as.SingleCellExperiment(v6.1, assay="SCT")
+```
+
+# Slingshot on UMAP space,
+
+CM starting cluster, clusterAnn2
+
+```{r}
+v6.1_sce <-  slingshot(v6.1_sce, 
+                                   clusterLabels = v6.1_sce$clusterAnn2, 
+                                   reducedDim = "UMAP", 
+                                   approx_points = FALSE,
+                                   start.clus = "CM", 
+                                   extend = 'n',
+                                   stretch = 0)
+```
+
+```{r}
+SlingshotDataSet(v6.1_sce)
+saveRDS(v6.1_sce, "v6.1_sce_slingshot.rds")
+```
+
+```{r}
+pseudo.paths <- slingCurves(v6.1_sce)
+cluster_colors <- c(`JCF` = "#A5D171", `SHF`= "#8FA2F2" ,`ECM` = "#FF8C00" ,`CM` = "#FF4500") 
+p1 <- DimPlot(v6.1, cols = cluster_colors, pt.size = 0.6, label = F) +
+  coord_fixed() + 
+  NoLegend() +
+  NoAxes()+
+  guides_truncated() +
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("") &
+  theme(rect = element_rect(fill = 'transparent'))
+for (path in pseudo.paths) {
+    embedded <- data.frame(path$s[path$ord,])
+    p1 <- p1 + geom_path(data=embedded, aes(x=umap_1, y=umap_2), linewidth  =1.2)
+}
+p1
+ggsave("plots/UMAP_coloredByCellID_curves.png", width = 4, height = 4, bg="transparent", dpi = 1200)
+```
+
+```{r}
+# Calculate average pseudotime across lineages
+v6.1_sce$Avg_pseudotime <- slingAvgPseudotime(v6.1_sce)
+plotUMAP(v6.1_sce, colour_by = 'Avg_pseudotime') + scale_color_viridis(option = 'E')
+```
+
+```{r}
+# Scale and reverse pst
+scale_reverse_pst <- function(pst) {
+  pst_scaled <- pst / max(pst, na.rm = T)
+  pst_revertsed <- 1 - pst_scaled
+  return(pst_revertsed)
+}
+
+```
+
+```{r}
+pst_df <- data.frame(colData(v6.1_sce)[, grep("pseudotime" ,colnames(colData(v6.1_sce)), ignore.case = T)])
+pst_df_scaled <- map_df(pst_df, scale_reverse_pst)
+colnames(pst_df_scaled) <- paste0(colnames(pst_df_scaled), ".scaled")
+
+colData(v6.1_sce) <- cbind(colData(v6.1_sce), pst_df_scaled )
+v6.1[[]] <- cbind(v6.1[[]], pst_df_scaled)
+saveRDS(v6.1_sce, "v6.1_sce_slingshot.rds")
+```
+
+```{r}
+p1 <- FeaturePlot(v6.1, "Avg_pseudotime.scaled", pt.size = 0.7) +
+  scale_color_viridis(option = 'E') + 
+  coord_fixed() + 
+  NoAxes() + 
+  ggtitle("Avg. pseudotime") +
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("")&
+  theme(rect = element_rect(fill = 'transparent'))
+for (path in pseudo.paths) {
+    embedded <- data.frame(path$s[path$ord,])
+    p1 <- p1 + geom_path(data=embedded, aes(x=umap_1, y=umap_2), size=1.2, color='brown')
+}
+p1
+ggsave("plots/UMAP_coloredByPseudotime_curves.png", width = 4, height = 4, bg="transparent", dpi = 1200)
+
+p2 <- FeaturePlot(v6.1, "Avg_pseudotime.scaled", pt.size = 0.7) +
+  scale_color_viridis(option = 'E') + 
+  coord_fixed() + 
+  NoAxes() + 
+  NoLegend() +
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("")&
+  theme(rect = element_rect(fill = 'transparent'))
+for (path in pseudo.paths) {
+    embedded <- data.frame(path$s[path$ord,])
+    p1 <- p1 + geom_path(data=embedded, aes(x=umap_1, y=umap_2), size=1.2, color='brown')
+}
+p2
+ggsave("plots/UMAP_coloredByPseudotime_curves2.png", width = 4, height = 4, bg="transparent", dpi = 1200)
+```
+
+```{r}
+summary(v6.1$Avg_pseudotime.scaled)
+```
+
+```{r}
+saveRDS(v6.1, "v6.1.rds")
+```
+
+## WT and Mut trajectories separately
+
+Run slingshot_conditions and plot MST to see if they're similar across conditions
+
+```{r}
+sdss <- slingshot_conditions(v6.1_sce, v6.1_sce$Genotype, approx_points = FALSE,
+                             extend = "n", reweight = T, reassign = T)
+
+sdss$condition_id <- names(sdss)
+sdss$mapping <- matrix(rep(1:2, each = 2), nrow = 2, ncol = 2, byrow = TRUE)
+sds <- do.call(merge_sds, sdss)
+```
+
+```{r}
+df<-bind_cols(
+  as.data.frame(reducedDims(v6.1_sce)$UMAP),
+  as.data.frame(colData(v6.1_sce)[, !colnames(colData(v6.1_sce)) == "slingshot"])
+  )
+
+df <- full_join(
+  df %>% select(umap_1, umap_2, SCT_snn_res.0.5, Genotype) %>%
+    rownames_to_column("cells"),
+  slingPseudotime(sds) %>% 
+    as.data.frame() %>%
+    mutate(cells = rownames(.))
+) %>%
+  pivot_longer(starts_with("Lineage"), names_to = "Curve", values_to = "pst")
+
+p4 <- ggplot(df, aes(x = umap_1, y = umap_2, col = Genotype)) +
+  geom_point(size = .7, alpha = .1) +
+  scale_color_brewer(palette = "Accent") +
+  coord_fixed()
+for (batch in unique(v6.1_sce$Genotype)) {
+  sds_cond <- sdss[[batch]]
+  for (i in 1:2) {
+    p4 <- p4 +  
+      geom_path(data = slingCurves(sds_cond)[[i]]$s[slingCurves(sds_cond)[[i]]$ord, ] %>%
+                  as.data.frame() %>%
+                  mutate(Genotype = batch), 
+                size = 1.5)   
+  }
+}
+
+p4
+ggsave("plots/Trajectory_condiments_slingshot_conditions.pdf")
+```

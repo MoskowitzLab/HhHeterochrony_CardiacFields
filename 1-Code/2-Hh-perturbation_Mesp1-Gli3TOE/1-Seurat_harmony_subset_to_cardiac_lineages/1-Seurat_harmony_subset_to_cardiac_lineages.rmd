@@ -1,0 +1,660 @@
+---
+title: "V5"
+output: html_notebook
+output: github_document
+---
+
+
+```{r message=FALSE, warning=FALSE}
+library(Seurat)
+library(tidyverse)
+library(patchwork)
+library(scales)
+library(glmGamPoi)
+library(presto)
+library(AnnotationDbi)
+library(glmGamPoi)
+library(org.Mm.eg.db)
+library(harmony)
+library(scCustomize)
+library(SingleR)
+library(scuttle) 
+library(scran)
+library(scater)
+library(UCell)
+library(ggh4x)
+library(circlize)
+source("/project/imoskowitz/wiktor/3-code/export_to_ppt.R")
+source("/project/imoskowitz/wiktor/3-code/1-seurat/ggplot_themes.R")
+ppt_path <- "/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/v5.pptx"
+```
+
+
+#Import Single Cell data
+
+## Read .gz files
+```{r}
+Wt1 <- read_tsv(file ="/project/imoskowitz/shared/data_collaborators/AlexG/data/Hh_Mesp1_E8-25_wt1.tsv.gz", col_names = T)
+Wt2 <- read_tsv(file ="/project/imoskowitz/shared/data_collaborators/AlexG/data/Hh_Mesp1_E8-25_wt2.tsv.gz", col_names = T)
+Mut1 <- read_tsv(file ="/project/imoskowitz/shared/data_collaborators/AlexG/data/Hh_Mesp1_E8-25_mut1.tsv.gz", col_names = T)
+Mut2 <- read_tsv(file ="/project/imoskowitz/shared/data_collaborators/AlexG/data/Hh_Mesp1_E8-25_mut2.tsv.gz", col_names = T)
+```
+
+## Rename genes from ENS to symbol
+
+``` {r Assign_Genes}
+
+genenames <- read.delim(file="/project/imoskowitz/shared/data_collaborators/AlexG/annotation/gencode.vM15.annotation_ID_type_names.txt", header=F, sep="\t")
+
+source("/project/imoskowitz/wiktor/3-code/1-seurat/matchIDtoSymbol.R")
+
+#Use custom function to change rownames from ENS -> Symbol
+Wt1 <- matchIDToSymbol2(Wt1, genenames = genenames)
+Wt2 <- matchIDToSymbol2(Wt2, genenames = genenames)
+Mut1 <- matchIDToSymbol2(Mut1, genenames = genenames)
+Mut2 <- matchIDToSymbol2(Mut2, genenames = genenames)
+```
+
+
+## Convert matrix to seurat object
+```{r}
+source("/project/imoskowitz/wiktor/3-code/1-seurat/MatrixToSeurat_rmDoublet.R") # Creates Seurat object and removes doublets
+source("/project/imoskowitz/shared/data_collaborators/AlexG/code/AddDoublets.R") 
+```
+
+```{r}
+Wt1 <- MatrixToSeurat_rmDoublet(Wt1, "Wt1", "Wt","/project/imoskowitz/shared/data_collaborators/AlexG/data/Doublets/wt1_scrublet_output_table.tsv" )
+Wt2 <- MatrixToSeurat_rmDoublet(Wt2, "Wt2", "Wt","/project/imoskowitz/shared/data_collaborators/AlexG/data/Doublets/wt2_scrublet_output_table.tsv" )
+Mut1 <- MatrixToSeurat_rmDoublet(Mut1, "Mut1", "Mut","/project/imoskowitz/shared/data_collaborators/AlexG/data/Doublets/mut1_scrublet_output_table.tsv" )
+Mut2 <- MatrixToSeurat_rmDoublet(Mut2, "Mut2", "Mut","/project/imoskowitz/shared/data_collaborators/AlexG/data/Doublets/mut2_scrublet_output_table.tsv" )
+
+
+# saveRDS(Wt1, "Wt1_doubletRM.rds")
+# saveRDS(Wt2, "Wt2_doubletRM.rds")
+# saveRDS(Mut1, "Mut1_doubletRM.rds")
+# saveRDS(Mut2, "Mut2_doubletRM.rds")
+```
+# V5.0 Whole dataset
+## Pre-processing
+```{r}
+merged_seurat <- merge(Wt1, y=list(Wt2, Mut1, Mut2))
+merged_seurat <- JoinLayers(merged_seurat)
+VlnPlot(merged_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"))
+# ggsave("QC/VlnQC.pdf")
+```
+
+```{r}
+merged_seurat <- subset(merged_seurat, nFeature_RNA < 4000 & nFeature_RNA > 500 & percent.mt < 5)
+VlnPlot(merged_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"))
+```
+
+```{r}
+# Cell Cycle
+# Reference genes
+cc.genes <- read.table("/project/imoskowitz/rcanac/0-R_codes/2-Ressources/Cell-Cycle_genes_scRNA-Seq_MusMusculus.txt", sep="\t", header = T,fill = TRUE)
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes[cc.genes$CellCyclePhase == "S",1]
+g2m.genes <- cc.genes[cc.genes$CellCyclePhase == "G2/M",1]
+```
+
+```{r}
+options(future.globals.maxSize = 8000 * 1024^2)
+merged_seurat <- NormalizeData(merged_seurat, verbose=F)
+merged_seurat <- CellCycleScoring(merged_seurat, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE, verbose=F)
+merged_seurat <- SCTransform(merged_seurat, vars.to.regress = c("S.Score", "G2M.Score", "percent.mt", "nCount_RNA", "nFeature_RNA"), verbose=F)
+merged_seurat <- RunPCA(merged_seurat, assay="SCT", verbose = F)
+harmonized <- RunHarmony(merged_seurat, group.by.vars = "Sample", verbose=F)
+```
+
+```{r}
+ElbowPlot(merged_seurat) + ElbowPlot(harmonized, reduction='harmony')
+```
+
+```{r}
+harmonized <- harmonized %>%
+  RunUMAP(reduction = "harmony", dims = 1:10, verbose = F) %>%
+  FindNeighbors(dims = 1:10, assay="SCT", reduction = "harmony", verbose = F) %>%
+  FindClusters(resolution = c(0.1, 0.2), assay = "SCT", verbose = F)
+```
+## UMAPs
+
+```{r}
+path <- "1-whole_dataset/"
+Idents(harmonized) <- "SCT_snn_res.0.1"
+(p1 <- DimPlot_scCustom(harmonized, figure_plot = T, ggplot_default_colors = T, label=T) & NoLegend())
+(p2 <- DimPlot_scCustom(harmonized, group.by = "Genotype", figure_plot = T, ggplot_default_colors = T))
+(p3 <-DimPlot_scCustom(harmonized, split.by = "Genotype" ,figure_plot = T, ggplot_default_colors = T, split_seurat = T) & NoLegend())
+(p4 <- DimPlot_scCustom(harmonized, group.by = "Sample", split.by = "Genotype" ,figure_plot = T, ggplot_default_colors = T, split_seurat = T))
+
+# ggsave(paste0(path,"Umap1.pdf"), plot=p1, width = 4, height = 4, bg="transparent")
+# ggsave(paste0(path,"Umap2.pdf"), plot=p2, width = 4.5, height = 4, bg="transparent")
+# ggsave(paste0(path,"Umap3.pdf"), plot=p3, width = 7, height = 4, bg="transparent")
+# ggsave(paste0(path,"Umap4.pdf"), plot=p4, width = 7.5, height = 4, bg="transparent")
+# 
+export_to_ppt(p1, ppt_path, width = 4, height = 4)
+export_to_ppt(p2, ppt_path, width = 4.5, height = 4)
+export_to_ppt(p3, ppt_path, width = 7, height = 4)
+export_to_ppt(p4, ppt_path, width = 7.5, height = 4)
+
+```
+```{r}
+
+```
+
+
+## Find All Markers
+
+```{r}
+findallmarkers <- FindAllMarkers(harmonized, logfc.threshold = 0.5, min.pct = 0.5, only.pos = T)
+findallmarkers <- subset(findallmarkers, p_val_adj < 0.05)
+
+findallmarkers %>%
+  Extract_Top_Markers() %>%
+  DoHeatmap(harmonized, .) #%>%
+  #export_to_ppt(., ppt_path, width = 15, height=8)
+
+ggsave(paste0(path, "Heatmap_FindAllMarkers_res0.1.pdf"), width = 15, height = 8)
+write.csv(findallmarkers, paste0(path, "FindAllMarkers.csv"))
+```
+
+```{r}
+saveRDS(harmonized, "rds_files/harmonized_whole_dataset.rds")
+```
+## FeaturePlots
+```{r}
+genes <- c("Gli1", "Ptch1", "Gli3", "Gli2", "Foxf1", "Hhip", "Smo", "Shh", "Ihh",
+              "Myl7", "Myh6" ,"Nkx2-5", "Gata4", "Ttn", "Tnnc1","Tnnt2" ,"Hand1", "Tbx20", "Tbx5", "Bmp4", "Mesp1",
+              "Pou5f1", "Fgf8", "Mef2c", "Tbx1", "Foxc2",
+              "Isl1", "Osr1", "Gata6", "Wnt2b", "Hoxb1", "Mab21l2", "Arg1",
+              "Tbx18", "Wt1", "Tcf21", "Upk3b", 
+           "Id1", "Id2", "Id3", "Id4", 
+           "Pecam1", "Etv2", "Cdh5", # Endothelial
+           "T"
+           )
+```
+
+```{r, fig.width=20, fig.height=15}
+(p <- FeaturePlot_scCustom(harmonized, genes, colors_use = viridis_light_high, num_columns = 7) & NoAxes())
+ggsave(paste0(path, "FeaturePlot.pdf"), width = 20, height = 15)
+export_to_ppt(p, ppt_path, width = 20, height = 15)
+```
+
+
+
+## Single R
+```{r}
+# Mouse gastrulation ref dataset
+mouse_gastr_ext <- readRDS("/project/imoskowitz/wiktor/4-singlecell_reference_datasets/EmbryoSCE_extended_atlas.rds")
+mouse_gastr_ext_e8.25 <- mouse_gastr_ext[ , mouse_gastr_ext$stage == "E8.25"]
+rm(mouse_gastr_ext)
+mouse_gastr_ext_e8.25 <- logNormCounts(mouse_gastr_ext_e8.25)
+rownames(mouse_gastr_ext_e8.25) <- rowData(mouse_gastr_ext_e8.25)$mgi_symbol
+
+# Test dataset
+harmonized_sce <- as.SingleCellExperiment(harmonized, assay="RNA")
+harmonized_sce <- logNormCounts(harmonized_sce)
+
+# Mouse gastrulation basic
+singleR_mouse_gastr <- SingleR(harmonized_sce, ref = mouse_gastr_ext_e8.25, labels=mouse_gastr_ext_e8.25$celltype_PijuanSala2019, clusters= harmonized_sce$SCT_snn_res.0.1, de.method = "wilcox", de.n = 50)
+table(predicted=singleR_mouse_gastr$labels, cluster=rownames(singleR_mouse_gastr))
+pdf(paste0(path, "HeatmapScoreSingleR_mouse_gastr.pdf"), width = 7, height = 6)
+plotScoreHeatmap(singleR_mouse_gastr, clusters = rownames(singleR_mouse_gastr), order.by = "clusters")
+dev.off()
+# Mouse gastrulation extended
+singleR_mouse_gastr_ext_label <- SingleR(harmonized_sce, ref = mouse_gastr_ext_e8.25, labels=mouse_gastr_ext_e8.25$celltype_extended_atlas, clusters= harmonized_sce$SCT_snn_res.0.1, de.method = "wilcox", de.n = 50,)
+table(predicted=singleR_mouse_gastr_ext_label$labels, cluster=rownames(singleR_mouse_gastr))
+
+pdf(paste0(path, "HeatmapScoreSingleR_mouse_gastr_ext.pdf"), width = 8, height = 8)
+plotScoreHeatmap(singleR_mouse_gastr_ext_label, clusters = rownames(singleR_mouse_gastr), order.by = "clusters")
+dev.off()
+```
+
+```{r}
+harmonized$mouse_gastr_label <- factor(harmonized$SCT_snn_res.0.1, labels=singleR_mouse_gastr$labels)
+harmonized$mouse_gastr_ext_label <- factor(harmonized$SCT_snn_res.0.1, labels=singleR_mouse_gastr_ext_label$labels)
+```
+
+```{r, fig.width=18, fig.height=5}
+p <- DimPlot(harmonized, group.by = c("SCT_snn_res.0.1","mouse_gastr_label", "mouse_gastr_ext_label")) & NoAxes()
+
+# ggsave(paste0(path, "SingleR_UMAPs.pdf"), height = 5, width = 18, bg="transparent")
+# export_to_ppt(p, ppt_path, width = 18, height = 5)
+```
+
+```{r}
+# Rename Clusters
+cell_type <- c("Erythroid", "Pharyngeal mesoderm", "Mesenchyme", "Erythroid", "YS endothelium", "Cardiomyocytes", "Exe endoderm")
+Idents(harmonized) <- "SCT_snn_res.0.1"
+names(cell_type) <- levels(harmonized)
+harmonized <- RenameIdents(harmonized, cell_type)
+harmonized$cell_type <- Idents(harmonized)
+# Add cute colors for each cluster
+cluster_colors <- c(Cardiomyocytes = "#EF6507", Erythroid = "#D1B38B", `YS endothelium`="#F2B41C", Mesenchyme = "#A5D171", `Pharyngeal mesoderm` = "#8FA2F2", `Exe endoderm` = "#FFCC9F")
+```
+
+
+```{r}
+custom_labels <- c(
+  "Erythroid",        # Bold this label
+  bquote(bold("Pharyngeal mesoderm")),            # Regular
+  bquote(bold("Mesenchyme")),                     # Regular
+  "YS endothelium",                 # Regular
+  bquote(bold("Cardiomyocytes")),   # Bold this label
+  "Exe endoderm"                    # Regular
+)
+axis <- ggh4x::guide_axis_truncated(
+  trunc_lower = unit(0, "npc"),
+  trunc_upper = unit(2, "cm")
+)
+umap_plot <-DimPlot(harmonized, label=F) +
+  labs(x="UMAP1", y= "UMAP2") +
+  scale_color_manual(values = cluster_colors, labels=custom_labels) +
+  guides(x= axis, y= axis) &
+    theme(axis.line = element_line(arrow = arrow(length=unit(0.1, "inches"))),
+        axis.title = element_text(hjust = 0), 
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        rect = element_rect(fill = 'transparent'))
+umap_plot
+ggsave("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/1-v5_seurat_filtering_subsetting_v5.1_v5.2/1-whole_dataset/UMAP_harmonized_whole_dataset.png", width = 6.4, height = 4, bg="transparent", dpi =1200)
+export_to_ppt(umap_plot, ppt_path, width = 6.4, height = 4)
+```
+
+```{r}
+axis <- ggh4x::guide_axis_truncated(
+  trunc_lower = unit(0, "npc"),
+  trunc_upper = unit(2, "cm")
+)
+
+```
+
+```{r, fig.width=6, fig.height=4}
+DimPlot(harmonized, label=F) +
+  labs(x="UMAP1", y= "UMAP2") +
+  scale_color_manual(values = cluster_colors, labels=custom_labels) +
+  coord_fixed(ratio = .8) +
+  guides_truncated() +
+  theme_truncated_axes() &
+    theme(
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        rect = element_rect(fill = 'transparent'))
+ggsave("1-whole_dataset/UMAP_clusteeAnno.png", width = 6, height = 4, bg='transparent', dpi=1200)
+```
+```{r, fig.width=6, fig.height=4}
+harmonized$Genotype <- factor(harmonized$Genotype, levels=c("Wt", "Mut"))
+DimPlot(harmonized, label=F, group.by = "Sample", split.by = "Genotype") &
+  labs(x="UMAP1", y= "UMAP2") &
+  #scale_color_manual(values = cluster_colors, labels=custom_labels) +
+  coord_fixed(ratio = .8) &
+  ggtitle("") &
+  # guides_truncated() &
+  # theme_truncated_axes() &
+  NoAxes() &
+    theme(
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        rect = element_rect(fill = 'transparent'))
+ggsave("1-whole_dataset/UMAP_groupBySampleSplitbyGenotype.png", width = 6, height = 4, bg='transparent', dpi=1200)
+```
+```{r, fig.width=6, fig.height=4}
+DimPlot(harmonized, label=F, group.by = "Genotype") +
+  labs(x="UMAP1", y= "UMAP2") +
+  scale_color_manual(values = c("lightgray", "#E0C568FF"))+
+  coord_fixed(ratio = .8) +
+  ggtitle("") +
+  NoAxes() &
+    theme(
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        rect = element_rect(fill = 'transparent'))
+ggsave("1-whole_dataset/UMAP_groupByGenotype.png", width = 6, height = 4, bg='transparent', dpi=1200)
+```
+```{r, fig.width=8, fig.height=4}
+DimPlot(harmonized, label=F, split.by = "Genotype") +
+  labs(x="UMAP1", y= "UMAP2") +
+  scale_color_manual(values = cluster_colors, labels=custom_labels) +
+  coord_fixed(ratio = .8) +
+  NoAxes() &
+    theme(
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        rect = element_rect(fill = 'transparent'))
+ggsave("1-whole_dataset/UMAP_clusteeAnno_splitByGenotype.png", width = 8, height = 4, bg='transparent', dpi=1200)
+```
+```{r, fig.width=10, fig.height=7}
+markers <- FindAllMarkers(harmonized, logfc.threshold = 1, min.pct = 0.3, only.pos = T)
+top10 <- Extract_Top_Markers(markers)
+cividis_markers <- colorRamp2(c(-1, 0.5, 1.5), hcl_palette = "cividis")
+
+DoHeatmap(harmonized, top10, label=F, group.colors = cluster_colors ,group.bar.height = 0.02, disp.min = -1, angle = 0, vjust=0.5, hjust = 0.6, size=5) +
+  scale_fill_gradientn(colors = cividis_markers(seq(-1,2))) &
+  theme(legend.text = element_text(size=12), 
+        legend.title = element_text(size=14),
+        axis.text.y = element_text(size=9),
+        rect = element_rect(fill='transparent'))
+
+ggsave("1-whole_dataset/Heatmap_FindAllMarkers_clusterAnno.png", width = 12, height = 7, dpi = 1200, bg="transparent")
+```
+
+
+
+# V5.1 SUBSET
+```{r}
+v5.1 <- subset(harmonized, cell_type %in% c("Pharyngeal mesoderm", "Mesenchyme", "Cardiomyocytes"))
+```
+
+```{r}
+# Cell Cycle
+# Reference genes
+cc.genes <- read.table("/project/imoskowitz/rcanac/0-R_codes/2-Ressources/Cell-Cycle_genes_scRNA-Seq_MusMusculus.txt", sep="\t", header = T,fill = TRUE)
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes[cc.genes$CellCyclePhase == "S",1]
+g2m.genes <- cc.genes[cc.genes$CellCyclePhase == "G2/M",1]
+```
+
+```{r}
+options(future.globals.maxSize = 8000 * 1024^2)
+v5.1 <- NormalizeData(v5.1, verbose=F) %>%
+  CellCycleScoring(s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE, verbose=F) %>%
+  SCTransform(vars.to.regress = c("S.Score", "G2M.Score", "percent.mt", "nCount_RNA", "nFeature_RNA"), verbose=F) %>%
+  RunPCA(assay="SCT", verbose = F) %>%
+  RunHarmony(group.by.vars = "Sample", verbose=F)
+
+ElbowPlot(v5.1) + ElbowPlot(v5.1, reduction='harmony')
+```
+
+```{r}
+v5.1$SCT_snn_res.0.1 <- NULL; v5.1$SCT_snn_res.0.2 <- NULL
+v5.1 <- v5.1 %>%
+  RunUMAP(reduction = "harmony", dims = 1:10, verbose = F) %>%
+  FindNeighbors(dims = 1:10, assay="SCT", reduction = "harmony", verbose = F) %>%
+  FindClusters(resolution = c(0.5, 0.8, 1), assay = "SCT", verbose = F)
+```
+
+```{r}
+DimPlot(v5.1, group.by = grep("SCT_snn.res",colnames(v5.1@meta.data),value = T), label=T) & NoLegend()
+```
+
+
+
+## Find all markers
+
+```{r}
+path <- "2-v5.1/"
+```
+
+```{r, fig.width=18, fig.height=18}
+findallmarkers_v5.1 <- list()
+
+for (res in grep("SCT_snn_res", colnames(v5.1@meta.data), value=T)) {
+  Idents(v5.1) <- res
+  findallmarkers <- FindAllMarkers(v5.1, logfc.threshold = 0.5, min.pct = 0.5, only.pos = T)
+  findallmarkers <- subset(findallmarkers, p_val_adj < 0.05)
+  findallmarkers_v5.1[[res]] <- findallmarkers
+}  
+
+pdf(paste0(path, "HeatMap_FindAllMarkers.pdf"), height = 18, width=18, bg="transparent")
+for (res in grep("SCT_snn_res", colnames(v5.1@meta.data), value=T)) {
+  df <- findallmarkers_v5.1[[res]]
+  df %>%
+    Extract_Top_Markers() %>%
+    DoHeatmap(v5.1, ., group.by = res) %>%
+    print()
+}  
+  dev.off()
+  
+write.csv(findallmarkers_v5.1$SCT_snn_res.0.5, paste0(path, "FindAllMarkers_V5.1_res.0.5.csv"))
+Extract_Top_Markers(findallmarkers_v5.1$SCT_snn_res.0.5, data_frame = T) %>%
+  write.csv(paste0(path, "FindAllMarkers_Top_Markers_V5.1_res.0.5.csv"))  
+```
+
+```{r}
+Idents(v5.1) <- "SCT_snn_res.0.5"
+```
+
+## UMAPs
+```{r}
+(p1 <- DimPlot_scCustom(v5.1, figure_plot = T, ggplot_default_colors = T, label=T) & NoLegend())
+# ggsave(paste0(path, "UMAP_v5.1_res.0.5.pdf"), width = 4, height = 4, bg="transparent")
+# export_to_ppt(p1, ppt_path,width = 4, height = 4)
+```
+
+
+## Single R
+```{r}
+# Mouse gastrulation ref dataset
+mouse_gastr_ext <- readRDS("/project/imoskowitz/wiktor/4-singlecell_reference_datasets/EmbryoSCE_extended_atlas.rds")
+mouse_gastr_ext_e8.25 <- mouse_gastr_ext[ , mouse_gastr_ext$stage == "E8.25"]
+rm(mouse_gastr_ext)
+mouse_gastr_ext_e8.25 <- logNormCounts(mouse_gastr_ext_e8.25)
+rownames(mouse_gastr_ext_e8.25) <- rowData(mouse_gastr_ext_e8.25)$mgi_symbol
+
+# Test dataset
+v5.1_sce <- as.SingleCellExperiment(v5.1, assay="RNA")
+v5.1_sce <- logNormCounts(v5.1_sce)
+
+# Mouse gastrulation basic
+singleR_mouse_gastr <- SingleR(v5.1_sce, ref = mouse_gastr_ext_e8.25, labels=mouse_gastr_ext_e8.25$celltype_PijuanSala2019, clusters= v5.1_sce$SCT_snn_res.0.5, de.method = "wilcox", de.n = 50)
+table(predicted=singleR_mouse_gastr$labels, cluster=rownames(singleR_mouse_gastr))
+pdf(paste0(path, "HeatmapScoreSingleR_mouse_gastr_v5.1.pdf"), width = 7, height = 6)
+plotScoreHeatmap(singleR_mouse_gastr, clusters = rownames(singleR_mouse_gastr), order.by = "clusters")
+dev.off()
+# Mouse gastrulation extended
+singleR_mouse_gastr_ext_label <- SingleR(v5.1_sce, ref = mouse_gastr_ext_e8.25, labels=mouse_gastr_ext_e8.25$celltype_extended_atlas, clusters= v5.1_sce$SCT_snn_res.0.5, de.method = "wilcox", de.n = 50,)
+table(predicted=singleR_mouse_gastr_ext_label$labels, cluster=rownames(singleR_mouse_gastr))
+
+pdf(paste0(path, "HeatmapScoreSingleR_mouse_gastr_ext_v5.1.pdf"), width = 8, height = 8)
+plotScoreHeatmap(singleR_mouse_gastr_ext_label, clusters = rownames(singleR_mouse_gastr), order.by = "clusters")
+dev.off()
+```
+
+```{r}
+v5.1$mouse_gastr_label_v5.1 <- factor(v5.1$SCT_snn_res.0.5, labels=singleR_mouse_gastr$labels)
+v5.1$mouse_gastr_ext_label_v5.1 <- factor(v5.1$SCT_snn_res.0.5, labels=singleR_mouse_gastr_ext_label$labels)
+
+v5.1_sce$mouse_gastr_label_v5.1 <- factor(v5.1_sce$SCT_snn_res.0.5, labels=singleR_mouse_gastr$labels)
+v5.1_sce$mouse_gastr_ext_label_v5.1 <- factor(v5.1_sce$SCT_snn_res.0.5, labels=singleR_mouse_gastr$labels)
+```
+
+```{r, fig.height=6, fig.width=20}
+DimPlot(v5.1, group.by = c("SCT_snn_res.0.5", "mouse_gastr_label_v5.1", "mouse_gastr_ext_label_v5.1"))
+ggsave("2-v5.1/UMAP_singleR.png", width = 20, height = 6)
+```
+## Feature Plot
+
+```{r}
+genes <- c("Gli1", "Ptch1", "Gli3", "Gli2", "Foxf1", "Hhip", "Smo", "Shh", "Ihh",
+              "Myl7", "Myh6" ,"Nkx2-5", "Gata4", "Ttn", "Tnnc1","Tnnt2" ,"Hand1", "Tbx20", "Tbx5", "Bmp4", "Mesp1",
+              "Pou5f1", "Fgf8", "Mef2c", "Tbx1", "Foxc2",
+              "Isl1", "Osr1", "Gata6", "Wnt2b", "Hoxb1", "Mab21l2", "Arg1",
+              "Tbx18", "Wt1", "Tcf21", "Upk3b", 
+           "Id1", "Id2", "Id3", "Id4", 
+           "Pecam1", "Etv2", "Cdh5", # Endothelial
+           "T", "Myocd"
+           )
+```
+
+
+```{r, fig.width=20, fig.height=15}
+(p2 <-FeaturePlot_scCustom(v5.1, genes, colors_use = viridis_light_high, num_columns = 7) & NoAxes())
+ggsave(paste0(path,"FeaturePlot.pdf"), width = 20, height = 15, bg="transparent")
+export_to_ppt(p2, ppt_path, width = 20, height = 15)
+```
+
+# v5.2
+Keep clusters 0, 2, 3, 1, 4, 6
+```{r}
+v5.2 <- subset(v5.1, SCT_snn_res.0.5 %in%c(6, 1, 4, 3, 0, 2))
+```
+
+```{r}
+# Cell Cycle
+# Reference genes
+cc.genes <- read.table("/project/imoskowitz/rcanac/0-R_codes/2-Ressources/Cell-Cycle_genes_scRNA-Seq_MusMusculus.txt", sep="\t", header = T,fill = TRUE)
+# segregate this list into markers of G2/M phase and markers of S phase
+s.genes <- cc.genes[cc.genes$CellCyclePhase == "S",1]
+g2m.genes <- cc.genes[cc.genes$CellCyclePhase == "G2/M",1]
+```
+
+```{r}
+options(future.globals.maxSize = 8000 * 1024^2)
+v5.2 <- NormalizeData(v5.2, verbose=F) %>%
+  CellCycleScoring(s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE, verbose=F) %>%
+  SCTransform(vars.to.regress = c("S.Score", "G2M.Score", "percent.mt", "nCount_RNA", "nFeature_RNA"), verbose=F,  variable.features.n = 1000) %>%
+  RunPCA(assay="SCT", verbose = F) %>%
+  RunHarmony(group.by.vars = "Sample", verbose=F)
+
+ElbowPlot(v5.2) + ElbowPlot(v5.2, reduction='harmony')
+```
+
+```{r}
+v5.2[[grep("SCT_snn_res", colnames(v5.2[[]]), value=T)]] <- NULL
+v5.2 <- v5.2 %>%
+  RunUMAP(reduction = "harmony", dims = 1:6, verbose = F) %>%
+  FindNeighbors(dims = 1:6, assay="SCT", reduction = "harmony", verbose = F) %>%
+  FindClusters(resolution = c(0.2, 0.3,0.4, 0.5), assay = "SCT", verbose = F)
+```
+
+```{r}
+res <- grep("SCT_snn_res", colnames(v5.2[[]]), value=T)
+DimPlot(v5.2, group.by = res, label = T) & NoLegend()
+```
+
+## FindAllMarkers
+```{r}
+path <- "3-v5.2/"
+```
+
+
+```{r, fig.width=18, fig.height=18}
+findallmarkers_v5.2 <- list()
+
+for (res in grep("SCT_snn_res", colnames(v5.2@meta.data), value=T)) {
+  Idents(v5.2) <- res
+  findallmarkers <- FindAllMarkers(v5.2, logfc.threshold = 0.5, min.pct = 0.5, only.pos = T)
+  findallmarkers <- subset(findallmarkers, p_val_adj < 0.05)
+  findallmarkers_v5.2[[res]] <- findallmarkers
+}  
+
+pdf(paste0(path, "HeatMap_FindAllMarkers.pdf"), height = 18, width=18, bg="transparent")
+for (res in grep("SCT_snn_res", colnames(v5.2@meta.data), value=T)) {
+  df <- findallmarkers_v5.2[[res]]
+  df %>%
+    Extract_Top_Markers() %>%
+    DoHeatmap(v5.2, ., group.by = res) + ggtitle(res) -> p
+    print(p)
+}  
+  dev.off()
+  
+# write.csv(findallmarkers_v5.2$SCT_snn_res.0.5, paste0(path, "FindAllMarkers_v5.2_res.0.5.csv"))
+# Extract_Top_Markers(findallmarkers_v5.2$SCT_snn_res.0.5, data_frame = T) %>%
+#   write.csv(paste0(path, "FindAllMarkers_Top_Markers_v5.2_res.0.5.csv"))  
+```
+## Single R
+
+```{r}
+# Mouse gastrulation ref dataset
+mouse_gastr_ext <- readRDS("/project/imoskowitz/wiktor/4-singlecell_reference_datasets/EmbryoSCE_extended_atlas.rds")
+mouse_gastr_ext_e8.25 <- mouse_gastr_ext[ , mouse_gastr_ext$stage == "E8.25"]
+rm(mouse_gastr_ext)
+mouse_gastr_ext_e8.25 <- logNormCounts(mouse_gastr_ext_e8.25)
+rownames(mouse_gastr_ext_e8.25) <- rowData(mouse_gastr_ext_e8.25)$mgi_symbol
+
+# Test dataset
+v5.2_sce <- as.SingleCellExperiment(v5.2, assay="RNA")
+v5.2_sce <- logNormCounts(v5.2_sce)
+
+# Mouse gastrulation basic
+singleR_mouse_gastr <- SingleR(v5.2_sce, ref = mouse_gastr_ext_e8.25, labels=mouse_gastr_ext_e8.25$celltype_PijuanSala2019, clusters= v5.2_sce$SCT_snn_res.0.5, de.method = "wilcox", de.n = 50)
+table(predicted=singleR_mouse_gastr$labels, cluster=rownames(singleR_mouse_gastr))
+
+# pdf(paste0(path, "HeatmapScoreSingleR_mouse_gastr_v5.2.pdf"), width = 7, height = 6)
+# plotScoreHeatmap(singleR_mouse_gastr, clusters = rownames(singleR_mouse_gastr), order.by = "clusters")
+# dev.off()
+# Mouse gastrulation extended
+singleR_mouse_gastr_ext_label <- SingleR(v5.2_sce, ref = mouse_gastr_ext_e8.25, labels=mouse_gastr_ext_e8.25$celltype_extended_atlas, clusters= v5.2_sce$SCT_snn_res.0.5, de.method = "wilcox", de.n = 50,)
+table(predicted=singleR_mouse_gastr_ext_label$labels, cluster=rownames(singleR_mouse_gastr))
+
+# pdf(paste0(path, "HeatmapScoreSingleR_mouse_gastr_ext_v5.2.pdf"), width = 8, height = 8)
+# plotScoreHeatmap(singleR_mouse_gastr_ext_label, clusters = rownames(singleR_mouse_gastr), order.by = "clusters")
+# dev.off()
+```
+
+```{r}
+v5.2$mouse_gastr_label_v5.2 <- factor(v5.2$SCT_snn_res.0.5, labels=singleR_mouse_gastr$labels)
+v5.2$mouse_gastr_ext_label_v5.2 <- factor(v5.2$SCT_snn_res.0.5, labels=singleR_mouse_gastr_ext_label$labels)
+
+v5.2_sce$mouse_gastr_label_v5.2 <- factor(v5.2_sce$SCT_snn_res.0.5, labels=singleR_mouse_gastr$labels)
+v5.2_sce$mouse_gastr_ext_label_v5.2 <- factor(v5.2_sce$SCT_snn_res.0.5, labels=singleR_mouse_gastr$labels)
+```
+
+```{r, fig.height=6, fig.width=20}
+DimPlot(v5.2, group.by = c("SCT_snn_res.0.5", "mouse_gastr_label_v5.2", "mouse_gastr_ext_label_v5.2"))
+```
+
+```{r}
+Idents(v5.2) <- "SCT_snn_res.0.3"
+```
+
+```{r}
+(p1 <- DimPlot_scCustom(v5.2, figure_plot = T, ggplot_default_colors = T, label=T) & NoLegend())
+ggsave(paste0(path, "UMAP_v5.2_res.0.3.pdf"), width = 4, height = 4, bg="transparent")
+export_to_ppt(p1, ppt_path,width = 4, height = 4)
+```
+
+## FeaturePlots
+```{r}
+genes <- c("Gli1", "Ptch1", "Gli3", "Gli2", "Foxf1", "Hhip", "Smo", "Shh", "Ihh",
+              "Myl7", "Myh6" ,"Nkx2-5", "Gata4", "Ttn", "Tnnc1","Tnnt2" ,"Hand1", "Tbx20", "Tbx5", "Bmp4", "Mesp1",
+              "Pou5f1", "Fgf8", "Mef2c", "Tbx1", "Foxc2",
+              "Isl1", "Osr1", "Gata6", "Wnt2b", "Hoxb1", "Mab21l2", "Arg1",
+              "Tbx18", "Wt1", "Tcf21", "Upk3b", 
+           "Id1", "Id2", "Id3", "Id4", 
+           "Pecam1", "Etv2", "Cdh5", # Endothelial
+           "T", 'Eomes', "Foxa2", "Actc1"
+           )
+```
+
+```{r, fig.width=20, fig.height=15}
+(p <- FeaturePlot_scCustom(v5.2, genes, colors_use = viridis_light_high, num_columns = 7) & NoAxes())
+ggsave(paste0(path, "FeaturePlot.pdf"), width = 20, height = 15, bg="transparent")
+export_to_ppt(p, ppt_path, width = 20, height = 15)
+```
+
+
+```{r, fig.height=15, fig.width=15}
+Idents(v5.2) <- "SCT_snn_res.0.4"
+markers <- FindAllMarkers(v5.2, logfc.threshold = 1, min.pct = 0.5, only.pos = T)
+top30_markers <- Extract_Top_Markers(markers, num_genes = 30)
+(p <- DoHeatmap(v5.2, top30_markers, size=5) + theme(axis.text.y = element_text(size=13)))
+ggsave("3-v5.2/Heatmap_FindAllMarkers_res0.4.pdf", height = 15, width = 16, bg="transparent")
+export_to_ppt(p, ppt_path, width = 16, height = 15)
+```
+
+```{r, fig.width=6, fig.height=4}
+colors <- c(`6` = "#EF6507", `3` = "#D1B38B", `5` = "#EF2E25", `1` = "#A5D171",  `0`= "#8FA2F2", `4` = "#3953A5", `2` = "#CD9CC8")
+(p <- DimPlot_scCustom(v5.2, figure_plot = T, colors_use = colors ))
+ggsave("3-v5.2/UMAP_v5.2_res0.4.pdf", width = 5.8, height = 4, bg="transparent")
+export_to_ppt(p, ppt_path, width = 5.8, height = 4)
+```
+
+```{r}
+saveRDS(v5.2, "rds_files/v5.2_harmonized_cardiac_lineage_shf_jcf.rds")
+```
+
+```{r}
+cl4vs0 <- FindMarkers(subset(v5.2, Genotype=="Wt"), ident.1 = 4, ident.2 = 0, min.pct = 0.4, logfc.threshold = 1.5)
+```
+
+```{r, fig.height=15, fig.width=15}
+markers_wt <- FindAllMarkers(subset(v5.2, Genotype=="Wt"), logfc.threshold = 1, min.pct = 0.5, only.pos = T)
+top30_markers_wt <- Extract_Top_Markers(markers_wt, num_genes = 30)
+(p <- DoHeatmap(v5.2, top30_markers_wt, size=5) + theme(axis.text.y = element_text(size=13)))
+# ggsave("3-v5.2/Heatmap_FindAllMarkers_res0.4.pdf", height = 15, width = 16, bg="transparent")
+# export_to_ppt(p, ppt_path, width = 16, height = 15)
+```
+```{r, fig.width=15, fig.height=10}
+VlnPlot(subset(v5.2, Genotype=="Wt"), features = c("T", "Mesp1", "Mixl1", "Eomes", "Pdgfra", "Kdr", "Nkx2-5", "Hand1", "Foxf1", "Msgn1", "Dll3", "Epcam", "Ncam", "Aldh1a2", "Snai1", "Tbx6"), idents = c(4, 0), ncol = 5, add.noise = F)
+```
+

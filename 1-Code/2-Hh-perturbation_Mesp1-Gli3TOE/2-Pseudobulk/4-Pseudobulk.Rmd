@@ -1,0 +1,452 @@
+
+# Env Prep
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(DESeq2)
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(Seurat)
+library(AnnotationDbi)
+library(enrichplot)
+library(PCAtools)
+library(RColorBrewer)
+library(enrichplot)
+library(openxlsx)
+source("/project/imoskowitz/wiktor/3-code/1-seurat/DGE.R")
+source("/project/imoskowitz/wiktor/3-code/1-seurat/ggplot_themes.R")
+```
+
+```{r}
+v6.1 <- readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V6/V6.1_Current/v6.1.rds")
+```
+# UMAP SHF JCF highlighted
+
+```{r}
+cluster_colors <- c(`SHF`= "#8FA2F2", `JCF` = "#A5D171") 
+shf_cells <- WhichCells(v6.1, idents = "SHF")
+jcf_cells <- WhichCells(v6.1, idents = "JCF")
+
+DimPlot(v6.1, label=F, pt.size=0.7, cells.highlight = list(SHF = shf_cells, JCF = jcf_cells), cols.highlight = cluster_colors) +
+  coord_fixed() + 
+  NoLegend() +
+  NoAxes()+
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("") &
+  theme(rect = element_rect(fill = 'transparent'))
+#ggsave("plots/UMAP_SHF_JCF_highlighted.png", width = 4, height = 4, bg="transparent", dpi = 1200)
+```
+
+
+# Counts
+```{r}
+set.seed(12)
+# Assign cells randomly to one of 3 groups
+v6.1$pseudoGroup <- paste0("Group", sample(1:3, nrow(v6.1[[]]), replace = T))
+table(v6.1$pseudoGroup, v6.1$Genotype)
+# Aggregate expression - make sure to always include pseudoGroup (or whatever group) in the group by.
+pseudo_v6.1_counts <- AggregateExpression(v6.1, assay="RNA" ,return.seurat = F, group.by = c("Genotype", "ident", "pseudoGroup"))
+pseudo_v6.1_counts <- as.matrix(pseudo_v6.1_counts$RNA)
+
+# Remove mitochondrial and ribosomal genes
+keep <- grep("^mt-|^Rpl|^Rps|^Mrpl*", rownames(pseudo_v6.1_counts), invert = T)
+pseudo_v6.1_counts_mt_rb_removed <- pseudo_v6.1_counts[keep, ]
+
+dim(pseudo_v6.1_counts) ; dim(pseudo_v6.1_counts_mt_rb_removed)
+```
+
+## Metadata
+```{r}
+metad <- data.frame(samples = colnames(pseudo_v6.1_counts)) %>%
+  mutate(group = str_extract(colnames(pseudo_v6.1_counts), "Group\\d+") %>% as.factor(), 
+         genotype = ifelse(grepl("Mut", samples), "Gli3TOE", "Ctl") %>% as.factor(),
+         cluster = str_extract(colnames(pseudo_v6.1_counts), "(?<=_)[^_]+(?=_)") %>% as.factor(),
+         cluster.genotype = paste0(cluster, "_", genotype) %>% as.factor()) %>%
+  column_to_rownames("samples")
+
+metad$cluster.genotype <- relevel(metad$cluster.genotype, ref="SHF_Ctl")
+metad$cluster <- relevel(metad$cluster, ref="SHF")
+metad$genotype <- relevel(metad$genotype, ref = "Ctl")
+```
+
+```{r}
+# remove lowely expressed genes with edgeR
+library(edgeR)
+mm <- model.matrix(~ group + cluster.genotype, data=metad)
+keep <- filterByExpr(pseudo_v6.1_counts_mt_rb_removed, design = mm)
+pseudo_v6.1_counts_filtered <- pseudo_v6.1_counts_mt_rb_removed[keep, ]
+dim(pseudo_v6.1_counts_mt_rb_removed)
+dim(pseudo_v6.1_counts_filtered)
+```
+# DESeq
+```{r}
+dds <- DESeqDataSetFromMatrix(pseudo_v6.1_counts_filtered, metad, design = ~ group + cluster.genotype)
+dds <- DESeq(dds)
+```
+
+## PCA
+```{r}
+# PCA
+vsd <- vst(dds)
+metad$genotype <- factor(metad$genotype, levels=c("Gli3TOE", "Ctl"))
+p <- pca(assay(vsd), metadata = metad, removeVar = 0.9)
+# pdf("plots/PCA.pdf", width = 7, height = 4, bg="transparent")
+biplot(p,
+       colby = "genotype",
+       shape = "group",
+       lab = metad$cluster,
+       legendPosition = "right")
+# dev.off()
+```
+
+# Results 
+```{r}
+levels(dds$cluster.genotype)
+contrasts <- list(
+  SHF = c("SHF_Gli3TOE", "SHF_Ctl"), 
+  JCF = c("JCF_Gli3TOE", "JCF_Ctl"), 
+  CM  = c("CM_Gli3TOE", "CM_Ctl"),
+  ECM = c("ECM_Gli3TOE", "ECM_Ctl")
+)
+
+res_deseq<- list()
+for (celltype in names(contrasts)) {
+  contrast = contrasts[[celltype]]
+  res = results(dds, contrast = c("cluster.genotype",contrast[1], contrast[2]), alpha=0.05)
+  res_deseq[[celltype]] <- res
+}
+# lfc shrink apeglm only works with coef and resultsNames(dds) doesn't contain all of them 
+lapply(res_deseq, summary)
+resultsNames(dds)
+SHF <- lfcShrink(dds, res = res_deseq$SHF, coef="cluster.genotype_SHF_Gli3TOE_vs_SHF_Ctl")
+
+dds$cluster.genotype <- relevel(dds$cluster.genotype, "JCF_Ctl")
+dds <- nbinomWaldTest(dds)
+JCF <- lfcShrink(dds, res = res_deseq$JCF, coef="cluster.genotype_JCF_Gli3TOE_vs_JCF_Ctl")
+
+dds$cluster.genotype <- relevel(dds$cluster.genotype, "ECM_Ctl")
+dds <- nbinomWaldTest(dds)
+ECM <- lfcShrink(dds, res = res_deseq$ECM, coef="cluster.genotype_ECM_Gli3TOE_vs_ECM_Ctl")
+
+dds$cluster.genotype <- relevel(dds$cluster.genotype, "CM_Ctl")
+dds <- nbinomWaldTest(dds)
+CM <- lfcShrink(dds, res = res_deseq$CM, coef="cluster.genotype_CM_Gli3TOE_vs_CM_Ctl")
+
+res_deseq_shrunken <- list(SHF = SHF, JCF = JCF, ECM = ECM ,CM = CM)
+rm(SHF, JCF, CM)
+```
+
+```{r}
+res_deseq_shrunken <- lapply(res_deseq_shrunken, function(x) results_transform(data.frame(x), lfcThreshold = 0.5))
+```
+
+## Write tables
+```{r}
+library(openxlsx)
+write.xlsx(res_deseq_shrunken, "DESeq_results.xlsx")
+
+```
+
+
+```{r}
+markers_shf <- list(Hh = c("Gli1", "Ptch1", "Gli3", "Gli2", "Foxf1", "Hhip"),
+                Cardiac = c("Ttn", "Myl7", "Myh6", "Tnnc1", "Tnnt2", "Tbx5", "Mef2c", "Gata4", "Des", "Hcn4", "Kcnj5", "Tgfb2", "Tbx20"), 
+                SHF = c("Isl1", "Osr1", "Arg1", "Fgf10", "Fgf8") , 
+                # JCF = c("Hand1", "Mab21l2"), 
+                BMP = c("Id1", "Id2", "Id3", "Id4"), 
+                Mesoderm = c("Mesp1", "T")
+)
+
+markers_jcf <- list(Hh = c("Gli1", "Ptch1", "Gli3", "Gli2", "Foxf1", "Hhip"),
+                Cardiac = c("Ttn", "Myl7", "Myh6", "Tnnc1", "Tnnt2", "Tbx5", "Mef2c", "Gata4", "Des", "Hcn4", "Kcnj5", "Tgfb2", "Tbx20"),
+                # SHF = c("Isl1", "Osr1", "Arg1", "Fgf10", "Fgf8") , 
+                JCF = c("Hand1", "Mab21l2"),
+                BMP = c("Id1", "Id2", "Id3", "Id4"), 
+                Mesoderm = c("Mesp1", "T")
+)
+
+```
+
+# Volcanos
+
+```{r}
+# res_deseq <- lapply(res_deseq_shrunken, function(x){
+#   x <- x %>%
+#     mutate( 
+#            padj_altered = padj + 10^-190)
+#   return(x)
+# })
+```
+
+```{r}
+assign_group <- function(gene, marker_list) {
+  group <- "DEG"  # Default group
+  for (group_name in names(marker_list)) {
+    if (gene %in% marker_list[[group_name]]) {
+      group <- group_name
+      break
+    }
+  }
+  return(group)
+}
+```
+
+```{r}
+res_deseq_shrunken <- lapply(res_deseq_shrunken, function(df) {
+  df$group_shf <- sapply(df$gene_id, assign_group, marker_list=markers_shf)
+  df$group_shf <- ifelse(df$differentialExpression == "not significant", "NS", df$group_shf)
+  df$group_jcf <- sapply(df$gene_id, assign_group, marker_list=markers_jcf)
+  df$group_jcf <- ifelse(df$differentialExpression == "not significant", "NS", df$group_jcf)
+  df$label_shf <- ifelse(df$gene_id %in% unlist2(markers_shf), df$gene_id, NA)
+  df$label_jcf <- ifelse(df$gene_id %in% unlist2(markers_jcf), df$gene_id, NA)
+  return(df)
+})
+
+res_deseq_shrunken$SHF$group_shf <- factor(res_deseq_shrunken$SHF$group_shf, 
+                                 levels = c("Cardiac", "SHF", "Hh", "BMP","Mesoderm", "DEG", "NS"))
+res_deseq_shrunken$JCF$group_jcf <- factor(res_deseq_shrunken$JCF$group_jcf, 
+                                 levels = c("Cardiac", "JCF", "Hh", "BMP","Mesoderm", "DEG", "NS"))
+
+```
+
+
+```{r, fig.width=4.1, fig.height=5.1}
+# SHF
+colors = c(
+  "Hh" = "#7570b3",
+  "BMP" = "#a6761d",
+  "Cardiac" = "coral3",
+  "SHF" = "#1F618D",
+  "Mesoderm" = "#1b9e77",
+  "DEG" = "gray50",
+  "NS" = "gray88"
+)
+size <- c(replicate(2.2, n=length(colors)-2), 1, 1) ; names(size) <- names(colors)
+alpha <- c(replicate(1, n=length(colors)-2), 0.8, 1) ; names(alpha) <- names(colors)
+volcano_shf <- plotVolcano2(res_deseq_shrunken$SHF, show_labels = T, label_column = "label_shf",color_column = "group_shf", use_asinh_scale_y =T, use_asinh_scale_x = T ,show_degs_number = T, title = "SHF Gli3TOE vs. Ctl", lfc_cutoff = 0.5, alpha_column = 'group_shf', size_column = 'group_shf') +
+  scale_color_manual(values=colors) +
+  scale_size_manual(values=size) +
+  scale_alpha_manual(values=alpha)
+
+
+# JCF
+colors = c(
+  "Hh" = "#7570b3",
+  "BMP" = "#a6761d",
+  "Cardiac" = "coral3",
+  "JCF" = "#1F618D",
+  "Mesoderm" = "#1b9e77",
+  "DEG" = "gray50",
+  "NS" = "gray88"
+)
+size <- c(replicate(2.2, n=length(colors)-2), 1.2, 1.2) ; names(size) <- names(colors)
+alpha <- c(replicate(1, n=length(colors)-2), 0.8, 1) ; names(alpha) <- names(colors)
+volcano_jcf <- plotVolcano2(res_deseq_shrunken$JCF, show_labels = T, label_column = "label_jcf",color_column = "group_jcf", use_asinh_scale_y =T, use_asinh_scale_x = T ,show_degs_number = T, title = "JCF Gli3TOE vs. Ctl", lfc_cutoff = 0.5, alpha_column = 'group_jcf', size_column = 'group_jcf') +
+  scale_color_manual(values=colors) +
+  scale_size_manual(values=size) +
+  scale_alpha_manual(values=alpha)
+
+# ECM 
+colors = c(
+  "Hh" = "#7570b3",
+  "BMP" = "#a6761d",
+  "Cardiac" = "coral3",
+  "SHF" = "#1F618D",
+  "Mesoderm" = "#1b9e77",
+  "DEG" = "gray50",
+  "NS" = "gray88"
+)
+size <- c(replicate(2.2, n=length(colors)-2), 1, 1) ; names(size) <- names(colors)
+alpha <- c(replicate(1, n=length(colors)-2), 0.8, 1) ; names(alpha) <- names(colors)
+volcano_ecm <- plotVolcano2(res_deseq_shrunken$ECM, show_labels = T, label_column = "label_shf",color_column = "group_shf", use_asinh_scale_y =T, use_asinh_scale_x = T ,show_degs_number = T, title = "ECM Gli3TOE vs. Ctl", lfc_cutoff = 0.5) +
+  scale_color_manual(values=colors) +
+  scale_size_manual(values=size) +
+  scale_alpha_manual(values=alpha)
+
+# CM
+colors = c(
+  "Hh" = "#7570b3",
+  "BMP" = "#a6761d",
+  "Cardiac" = "coral3",
+  "SHF" = "#1F618D",
+  "Mesoderm" = "#1b9e77",
+  "DEG" = "gray50",
+  "NS" = "gray88"
+)
+size <- c(replicate(2.2, n=length(colors)-2), 1, 1) ; names(size) <- names(colors)
+alpha <- c(replicate(1, n=length(colors)-2), 0.8, 1) ; names(alpha) <- names(colors)
+volcano_cm <- plotVolcano2(res_deseq_shrunken$CM, show_labels = T, label_column = "label_shf",color_column = "group_shf", use_asinh_scale_y =T, use_asinh_scale_x = T ,show_degs_number = T, title = "CM Gli3TOE vs. Ctl", lfc_cutoff = 0.5) +
+  scale_color_manual(values=colors) +
+  scale_size_manual(values=size) +
+  scale_alpha_manual(values=alpha)
+
+# pdf("plots/Volcanos_SHF_JCF_G3TOE_vs_Ctl.pdf", width = 4.1, height = 5.1, bg="transparent")
+  volcano_shf
+  volcano_jcf
+  volcano_ecm
+  volcano_cm
+# dev.off()
+
+```
+
+# GO Terms
+
+## Cluster profiler
+```{r}
+universe <- res_deseq_shrunken$SHF$gene_id
+GO_list <- list()
+for (cluster in c("SHF", "JCF")) {
+  df <- res_deseq_shrunken[[cluster]]
+  name_up <- paste0(cluster, "_Up")
+  name_dn <- paste0(cluster, "_Down")
+  
+  test_vctr_up <- subset(df, differentialExpression == "up") %>% pull(gene_id)
+  test_vctr_dn <- subset(df, differentialExpression == "down") %>% pull(gene_id)
+  
+  GO_up <- runGO(test_vctr_up, universe, keyType = "SYMBOL")
+  GO_dn <- runGO(test_vctr_dn, universe, keyType = "SYMBOL")
+  
+  GO_list[[name_up]] <- GO_up
+  GO_list[[name_dn]] <- GO_dn
+}
+```
+
+```{r}
+GO_list_converted <- lapply(GO_list, function(df) {
+  df <- df %>% data.frame() %>% 
+    subset(qvalue < 0.05)
+  return(df)
+})
+```
+
+## Plot top 10
+```{r, fig.width=6, fig.height=5.1}
+# pdf("plots/GoTerms_clusterProfiler_top10.pdf", width = 6.5, height = 5.1, bg="transparent" )
+for (name in names(GO_list_converted)) {
+  title_split <- unlist(strsplit(name, "_"))
+  title <- ifelse(title_split[2] == "Up", paste0(title_split[1], ": Gli3T OE activated"), paste0(title_split[1], ": Gli3T OE repressed"))
+  df <- GO_list_converted[[name]]
+  plot <- DotPlotGo(df, strWrap = 40) + ggtitle(title)
+  print(plot)
+}
+# dev.off()
+```
+## Plot sig. cardiac terms
+
+```{r, fig.width=6, fig.height=5.1}
+
+shf_up_cardiac <- GO_list_converted$SHF_Up %>%
+    filter(grepl("heart|cardiac|endocard|cardio|*cardi\\*|myof|contraction", Description, ignore.case = TRUE))
+plot_shf_up_cardiac <- DotPlotGo(shf_up_cardiac, topTerms = 5 ,strWrap = 40) + ggtitle('SHF: cardiac terms (Gli3T OE activated)')
+
+jcf_up_cardiac <- GO_list_converted$JCF_Up %>%
+    filter(grepl("heart|cardiac|endocard|cardio|*cardi\\*|myofib|contraction", Description, ignore.case = TRUE))
+plot_jcf_up_cardiac <- DotPlotGo(jcf_up_cardiac, topTerms = 8 ,strWrap = 40) + ggtitle('JCF: cardiac terms (Gli3T OE activated)')
+
+# pdf("plots/GoTerms_clusterProfiler_CardiacTerms.pdf", width = 6.5, height = 5.1, bg="transparent" )
+print(plot_shf_up_cardiac)
+print(plot_jcf_up_cardiac)
+# dev.off()
+```
+
+
+## Write tables
+```{r}
+write.xlsx(GO_list_converted, "GO_terms_cluster_profiler_BP.xlsx")
+```
+
+# GSEA clusterProfiler
+
+```{r}
+GSEA <- list()
+for (res in c("SHF", "JCF")) {
+  df <- res_deseq_shrunken[[res]]
+  df <- df[df$baseMean > 10, ]
+  df <- df[order(-df$log2FoldChange), ]
+  input <- df$log2FoldChange
+  names(input) <- df$gene_id
+  gsea_run <- gseGO(input, keyType = "SYMBOL", OrgDb = "org.Mm.eg.db", nPermSimple = 10000, eps = 0)
+  GSEA[[res]] <- gsea_run
+}
+```
+
+```{r}
+write.xlsx(GSEA, "GSEAgo_cluster_profiler_BP.xlsx")
+```
+
+
+```{r}
+pdf("plots/GSEA_cardiac_related_terms.pdf", width = 4, height = 3)
+for (name in names(GSEA)){
+  gsea <- GSEA[[name]]
+  cardiac_terms <- grep("heart|cardiac|cardi|contration|muscle", gsea@result$Description)
+  
+  for (term in cardiac_terms){
+    p = gseaplot2(gsea, gsea[term, "ID"], title=paste0(name, ": ",gsea[term, "Description"]), base_size = 12, subplots = 1:2)
+    p[[1]] <- p[[1]] + ylab("RES")
+    print(p)
+  }
+}
+dev.off()
+```
+
+
+# Correlations
+```{r}
+shf_jcf_degs_merged <- res_deseq_shrunken$SHF %>%
+  inner_join(res_deseq_shrunken$JCF, by='gene_id', suffix = c(".SHF", ".JCF"))
+```
+
+```{r}
+shf_jcf_degs_merged <- transformMerged(shf_jcf_degs_merged, suffix = c(".SHF", ".JCF"))
+```
+## Scatter
+```{r}
+colors <- c("lightgrey" ,hcl.colors(3, "Dynamic")) %>% setNames(c("Not significant in either", "Significant in JCF", "Significant in both", "Significant in SHF"))
+plotCorrelations(shf_jcf_degs_merged, suffix = c(".SHF", ".JCF"), show_labels = FALSE, show_deg_counts = F, point_colors = colors, point_size = 0.4, alpha = 0.7) +
+  coord_trans(x='asinh', y='asinh') +
+  scale_alpha_manual(values=alpha) +
+  geom_smooth(method = "lm", data=subset(shf_jcf_degs_merged, Significance == "Significant in both"), se=F, linewidth=.5, show.legend = F) +
+  stat_correlation(data=subset(shf_jcf_degs_merged, Significance == "Significant in both"), use_label(c("r", "p", "R2")), method="pearson", label.y="top", size=4, alpha=1)
+
+#ggsave("plots/Scatterplot_JCF_SHF_degs.pdf", width = 5.2, height = 2.9, bg="transparent")
+```
+
+## GO terms
+```{r}
+quads <- c("upper-right", "lower-left")
+GO_terms_sig_in_both <- list()
+universe <- shf_jcf_degs_merged$gene_id
+
+for (quad in quads) {
+  df <- shf_jcf_degs_merged %>% subset(Significance == "Significant in both" & Quadrant == quad)
+  test_vector <- df$gene_id
+  
+  GO <- runGO(test_vector, universe, keyType = "SYMBOL")
+  GO_terms_sig_in_both[[quad]] <- GO
+
+}
+```
+
+```{r, fig.width=6.5, fig.height=5.1}
+pdf("plots/GoTerms_clusterProfiler_JCF_SHF_Merged_sigInBoth_top10.pdf", width = 6.5, height = 5.1, bg="transparent" )
+for (name in names(GO_terms_sig_in_both)) {
+  df <- GO_terms_sig_in_both[[name]]
+  plot <- DotPlotGo(df, strWrap = 40) + ggtitle(paste0("Significant in both - ", name))
+  print(plot)
+}
+dev.off()
+```
+
+
+```{r}
+write.xlsx(shf_jcf_degs_merged, "DEGS_jcf_shf_merged.xlsx")
+write.xlsx(GO_terms_sig_in_both, "GO_terms_merged_shf_jcf_significant_in_both.xlsx")
+```
+
+
+
+```{r}
+save(res_deseq_shrunken, shf_jcf_degs_merged, file = "results.RData")
+```
+

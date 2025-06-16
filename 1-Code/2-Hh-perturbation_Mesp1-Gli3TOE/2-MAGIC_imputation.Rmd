@@ -1,0 +1,67 @@
+---
+title: "V5.2 Magic"
+date: "2024-09-18"
+---
+
+# Env Prep
+```{r}
+library(Rmagic)
+library(SingleCellExperiment)
+library(tidyverse)
+library(reticulate)
+library(viridis)
+library(Seurat)
+use_condaenv('/project/imoskowitz/itarampoulous/B-CondaEnvs/Pymagic')
+```
+
+```{r}
+v5.2 <- readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/v5_seurat_filtering_subsetting_v5.1_v5.2/rds_files/v5.2_harmonized_cardiac_lineage_shf_jcf.rds")
+```
+
+# Prep counts
+```{r}
+raw_counts <- as.matrix(v5.2[["RNA"]]$counts)
+raw_counts <- t(raw_counts)
+
+# Remove genes that are expressed in less than 10 cells 
+keep_cols <- colSums(raw_counts > 0) > 10
+raw_counts <- raw_counts[,keep_cols]
+
+# Library size normalization
+normalized_counts <- library.size.normalize(raw_counts) 
+# Square root norm to avoid log10 zeros instabilities
+normalized_counts <- sqrt(normalized_counts)
+
+# Convert to data frame
+normalized_counts_before_magic <- as.data.frame(as.matrix(normalized_counts))
+# saveRDS(normalized_counts_before_magic, "v5.2_lib_norm_sqrt_counts_BEFORE_MAGIC.rds")
+```
+
+```{r}
+v5.2_afterMAGIC_t3 <- magic(normalized_counts_before_magic, genes = "all_genes", t=3)
+v5.2_afterMAGIC_t4 <- magic(normalized_counts_before_magic, genes = "all_genes", t=4, init= v5.2_afterMAGIC_t3)
+v5.2_afterMAGIC_auto <- magic(normalized_counts_before_magic, genes = "all_genes", t='auto', init= v5.2_afterMAGIC_t3) # selected t =11
+```
+
+
+```{r}
+ggplot(normalized_counts_before_magic) +
+  geom_point(aes(x=Gli1, y=Myl7, color=Isl1)) 
+
+ggplot(v5.2_afterMAGIC_t3) +
+  geom_point(aes(x=Gli1, y=Myl7, color=Isl1)) 
+
+ggplot(v5.2_afterMAGIC_t4) +
+  geom_point(aes(x=Gli1, y=Myl7, color=Isl1)) 
+
+ggplot(v5.2_afterMAGIC_auto) +
+  geom_point(aes(x=Gli1, y=Myl7, color=Isl1)) 
+```
+
+
+```{r}
+saveRDS(v5.2_afterMAGIC_t3, "v5.2_afterMAGIC_t3.rds")
+saveRDS(v5.2_afterMAGIC_t4, "v5.2_afterMAGIC_t4.rds")
+saveRDS(v5.2_afterMAGIC_auto, "v5.2_afterMAGIC_t11_auto.rds")
+```
+

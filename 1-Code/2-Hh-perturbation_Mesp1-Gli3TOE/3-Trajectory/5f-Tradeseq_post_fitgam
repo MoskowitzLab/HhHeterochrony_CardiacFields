@@ -1,0 +1,469 @@
+---
+title: "Tradeseq"
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(Seurat)
+library(tidyverse)
+library(slingshot)
+library(scater)
+library(viridis)
+library(patchwork)
+library(ggpubr)
+library(SingleCellExperiment)
+library(purrr)
+library(condiments)
+library(tradeSeq)
+library(ComplexHeatmap)
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(circlize)
+source("/project/imoskowitz/wiktor/3-code/1-seurat/ggplot_themes.R")
+```
+
+```{r}
+v6.1_sce_tradeseq <- readRDS("v6.1_sce_fitGAM.rds")
+```
+
+# Association test
+
+```{r}
+assoc.test <- associationTest(v6.1_sce_tradeseq, global = F, lineages = T, l2fc = 0.5, contrastType = 'start')
+assoc.test <- assoc.test %>%
+  mutate(gene_id = rownames(assoc.test))
+
+assoc.test_list <- list(
+  shf_lineage = assoc.test %>%
+    dplyr::select(matches('lineage1|gene_id')),
+  
+  jcf_lineage = assoc.test %>%
+    dplyr::select(matches('lineage2|gene_id'))
+)
+assoc.test_list <- lapply(assoc.test_list, function(df){
+  pval_Wt = df %>% dplyr::select(., matches('conditionWt')) %>% dplyr::select(matches('pvalue')) %>% pull()
+  pval_Mut = df %>% dplyr::select(., matches('conditionMut')) %>% dplyr::select(matches('pvalue')) %>% pull()
+  df = df %>% mutate(
+    padj_Wt = p.adjust(pval_Wt, method = 'fdr'),
+    padj_Mut = p.adjust(pval_Mut, method = 'fdr'),
+    isDeg_Wt = if_else(padj_Wt <= 0.05, TRUE, FALSE, FALSE),
+    isDeg_Mut = if_else(padj_Mut <= 0.05, TRUE, FALSE, FALSE),
+    isDeg = case_when(isDeg_Wt & isDeg_Mut ~ "DEG",
+                      isDeg_Wt & !isDeg_Mut ~ "DEG in Wt",
+                      !isDeg_Wt & isDeg_Mut ~ "DEG in Mut",
+                      !isDeg_Wt & !isDeg_Mut ~ "NS")
+  ) %>%
+    subset(isDeg != "NS") %>%
+    arrange(padj_Wt)
+})
+```
+
+## Heatmaps WT only
+
+### SHF
+
+#### yHat smooth subset
+
+```{r}
+yhatSmooth <- predictSmooth(v6.1_sce_tradeseq, gene = rownames(subset(assoc.test_list$shf_lineage, isDeg_Wt)), nPoints = 100, tidy = FALSE) %>%
+      log1p()
+yhatSmoothScaled <- t(scale(t(yhatSmooth[, rev(grep("lineage1_conditionWt", colnames(yhatSmooth)))])))
+```
+
+#### **Label genes on the heatmap**
+
+```{r}
+set.seed(123)
+# Genes I want to label on the heatmap
+genes <- list(
+  Hh = c("Ptch1", "Ptch2" ,"Hhip", "Foxf1", "Foxf2", "Gli1", "Gli2"),
+  BMP = c("Msx1", "Bambi", "Smad7", "Id1", "Id2", "Id3", "Id4", "Bmper"), 
+  CP = c("Isl1", "Osr1", "Fgf8", "Fgf10","Tbx1", "Arg1","Hoxb1" ,"Hand1","Mab21l2", "Bra", 'Foxp1'),
+  CM = c("Gata4", "Tbx5", "Nkx2-5", "Myl7" ,"Myh6", "Tnnc1", "Tnnt2", "Ttn", "Hand2"),
+  c('Gata3', 'Gata5', 'Bmp2', 'Bmp4')
+) %>% unlist() %>% setNames(NULL)
+
+row_indices <- which(rownames(yhatSmoothScaled) %in% genes)
+names(row_indices) <- rownames(yhatSmoothScaled)[row_indices]
+
+# Additionally label every 50th gene (row) on the heatmap
+# Get every 50th gene
+every_20th_gene <- seq(1, nrow(yhatSmoothScaled), by = 50)
+extra_indices <- setdiff(every_20th_gene, row_indices)  # Avoid duplication
+
+# Combine both sets of indices
+final_indices <- sort(c(row_indices, extra_indices))
+
+names(final_indices) <- rownames(yhatSmoothScaled[final_indices, ])
+
+
+```
+
+#### **Kmeans clustering**
+
+```{r}
+km_clusters <- data.frame(cluster = kmeans(yhatSmoothScaled, 8)$cluster)
+km_clusters$geneid <- rownames(km_clusters)
+
+row_order = hclust(dist(yhatSmoothScaled))
+
+# label some of the rows (genes) on the heatmap
+ha = rowAnnotation(foo = anno_mark(at = final_indices, 
+                                   labels = names(final_indices), side = 'left'))
+```
+
+**GO terms of km clusters**
+
+```{r}
+universe <- rownames(rowData(v6.1_sce_tradeseq))
+
+shf_wt_go <- compareCluster(geneid~cluster, data = km_clusters, fun = 'enrichGO', OrgDb  = "org.Mm.eg.db", ont='BP', qvalueCutoff = 0.05, readable = T, keyType = "SYMBOL", universe = universe) 
+
+# extract top 5 terms per cluster
+n <- 5
+go_list <- shf_wt_go@compareClusterResult %>%
+  group_by(Cluster) %>%
+  slice_min(qvalue, n = n) %>%  # Select top N based on qvalue
+  summarise(GO_Terms = list(Description), .groups = "drop") %>%
+  deframe()
+
+```
+
+#### Heatmap
+
+```{r, fig.width=10, fig.height=10}
+# Annotate go terms on the heatmap
+# Create annotation object using anno_textbox()
+go_anno <- rowAnnotation(
+  textbox = anno_textbox(
+    km_clusters$cluster, 
+    go_list, 
+    #by = 'anno_block',
+    word_wrap = T, 
+    add_new_line = T,
+   background_gp = gpar(fill = 'transparent')
+  )
+)
+top_anno_df <- data.frame(Genotype = c(rep("Wt", 100)), row.names = colnames(yhatSmoothScaled))
+cols <- colorRamp2(c(-2,2), hcl_palette = "cividis")
+ht1 <- Heatmap(yhatSmoothScaled, 
+               col =  cols,
+               column_split = top_anno_df,
+               show_column_names = F, show_row_names = F, 
+               cluster_columns = F, 
+               cluster_rows = T,
+               show_row_dend = F,
+               row_title = NULL,
+               name = "SHF lineage",
+               row_split = km_clusters$cluster,
+               row_gap = unit(1, "mm"),
+               left_annotation = ha,
+               #row_order = row_order$order, 
+               right_annotation = go_anno
+               
+)
+png("plots2/AssocTest_SHF_lineage_WT_only.png", width = 12, height = 10, units = 'in', res = 600)
+ht1 <- draw(ht1)
+dev.off()
+```
+
+### JCF
+
+#### yHat smooth subset
+
+```{r}
+v6.1_sce_subset <- v6.1_sce_tradeseq[]
+yhatSmooth <- predictSmooth(v6.1_sce_tradeseq, gene = rownames(subset(assoc.test_list$jcf_lineage, isDeg_Wt)), nPoints = 100, tidy = FALSE) %>%
+  log1p()
+yhatSmoothScaled <- t(scale(t(yhatSmooth[, rev(grep("lineage2_conditionWt", colnames(yhatSmooth)))])))
+```
+
+#### **Label genes on the heatmap**
+
+```{r}
+set.seed(123)
+# Genes I want to label on the heatmap
+genes <- list(
+  Hh = c("Ptch1", "Ptch2" ,"Hhip", "Foxf1", "Foxf2", "Gli1", "Gli2"),
+  BMP = c("Msx1", "Bambi", "Smad7", "Id1", "Id2", "Id3", "Id4", "Bmper"), 
+  CP = c("Isl1", "Osr1", "Fgf8", "Fgf10","Tbx1", "Arg1","Hoxb1" ,"Hand1","Mab21l2", "Bra", 'Foxp1'),
+  CM = c("Gata4", "Tbx5", "Nkx2-5", "Myl7" ,"Myh6", "Tnnc1", "Tnnt2", "Ttn", "Hand2"),
+  c('Gata3', 'Gata5', 'Bmp2', 'Bmp4')
+) %>% unlist() %>% setNames(NULL)
+
+row_indices <- which(rownames(yhatSmoothScaled) %in% genes)
+names(row_indices) <- rownames(yhatSmoothScaled)[row_indices]
+
+# Additionally label every 50th gene (row) on the heatmap
+# Get every 50th gene
+every_20th_gene <- seq(1, nrow(yhatSmoothScaled), by = 50)
+extra_indices <- setdiff(every_20th_gene, row_indices)  # Avoid duplication
+
+# Combine both sets of indices
+final_indices <- sort(c(row_indices, extra_indices))
+
+names(final_indices) <- rownames(yhatSmoothScaled[final_indices, ])
+
+
+```
+
+#### **Kmeans clustering**
+
+```{r}
+km_clusters <- data.frame(cluster = kmeans(yhatSmoothScaled, 5)$cluster)
+km_clusters$geneid <- rownames(km_clusters)
+
+row_order = hclust(dist(yhatSmoothScaled))
+
+# label some of the rows (genes) on the heatmap
+ha = rowAnnotation(foo = anno_mark(at = final_indices, 
+                                   labels = names(final_indices), side = 'left'))
+```
+
+**GO terms of km clusters**
+
+```{r}
+universe <- rownames(rowData(v6.1_sce_tradeseq))
+
+jcf_wt_go <- compareCluster(geneid~cluster, data = km_clusters, fun = 'enrichGO', OrgDb  = "org.Mm.eg.db", ont='BP', qvalueCutoff = 0.05, readable = T, keyType = "SYMBOL", universe = universe) 
+
+# extract top 5 terms per cluster
+n <- 5
+go_list <- jcf_wt_go@compareClusterResult %>%
+group_by(Cluster) %>%
+slice_min(qvalue, n = n) %>%  # Select top N based on qvalue
+summarise(GO_Terms = list(Description), .groups = "drop") %>%
+deframe()
+
+```
+
+#### Heatmap
+
+```{r, fig.width=10, fig.height=10}
+# Annotate go terms on the heatmap
+# Create annotation object using anno_textbox()
+go_anno <- rowAnnotation(
+  textbox = anno_textbox(
+    km_clusters$cluster, 
+    go_list, 
+    #by = 'anno_block',
+    word_wrap = T, 
+    add_new_line = T,
+    background_gp = gpar(fill = 'transparent')
+  )
+)
+top_anno_df <- data.frame(Genotype = c(rep("Wt", 100)), row.names = colnames(yhatSmoothScaled))
+cols <- colorRamp2(c(-2,2), hcl_palette = "cividis")
+ht2 <- Heatmap(yhatSmoothScaled, 
+               col =  cols,
+               column_split = top_anno_df,
+               show_column_names = F, show_row_names = F, 
+               cluster_columns = F, 
+               cluster_rows = T,
+               show_row_dend = F,
+               row_title = NULL,
+               name = "JCF lineage",
+               row_split = km_clusters$cluster,
+               row_gap = unit(1, "mm"),
+               left_annotation = ha,
+               #row_order = row_order$order, 
+               right_annotation = go_anno
+               
+)
+png("plots2/AssocTest_JCF_lineage_WT_only.png", width = 12, height = 10, units = 'in', res = 600)
+ht2 <- draw(ht2)
+dev.off()
+```
+
+# Start vs End test
+
+```{r}
+startRes <- startVsEndTest(v6.1_sce_tradeseq, global = F, lineages = T, l2fc = 0.5)
+startRes <- as.data.frame(startRes)
+startRes_list <- list(
+  SHF = dplyr::select(startRes, contains('lineage1')),
+  JCF = dplyr::select(startRes, contains('lineage2'))
+)
+startRes_list <- lapply(startRes_list, function(x) {
+  x %>%
+    mutate(across(matches("pvalue", ignore.case = TRUE), 
+                  ~ p.adjust(.x, method = "fdr"), 
+                  .names = "padj")) %>%
+    filter(padj < 0.05) %>%
+    arrange(across(starts_with('logFC')))
+})
+```
+
+## Heatmaps WT only
+
+### SHF
+
+```{r}
+yhatSmooth <- predictSmooth(v6.1_sce_tradeseq, gene = rownames(startRes_list$SHF), nPoints = 100, tidy = FALSE) %>%
+      log1p()
+yhatSmoothScaled <- t(scale(t(yhatSmooth[, rev(grep("lineage1_conditionWt", colnames(yhatSmooth)))])))
+yhatSmoothScaled <- yhatSmoothScaled[rownames(startRes_list$SHF), ]
+```
+
+```{r}
+row_indices <- which(rownames(yhatSmoothScaled) %in% genes)
+names(row_indices) <- rownames(yhatSmoothScaled)[row_indices]
+
+# Additionally label every 50th gene (row) on the heatmap
+# Get every 50th gene
+every_20th_gene <- seq(1, nrow(yhatSmoothScaled), by = 50)
+extra_indices <- setdiff(every_20th_gene, row_indices)  # Avoid duplication
+
+# Combine both sets of indices
+final_indices <- sort(c(row_indices, extra_indices))
+
+names(final_indices) <- rownames(yhatSmoothScaled[final_indices, ])
+```
+
+```{r}
+km_clusters <- data.frame(cluster = kmeans(yhatSmoothScaled, 6)$cluster)
+km_clusters$geneid <- rownames(km_clusters)
+
+row_order = hclust(dist(yhatSmoothScaled))
+
+# label some of the rows (genes) on the heatmap
+ha = rowAnnotation(foo = anno_mark(at = final_indices, 
+                                   labels = names(final_indices), side = 'left'))
+```
+
+```{r}
+universe <- rownames(rowData(v6.1_sce_tradeseq))
+
+shf_wt_go <- compareCluster(geneid~cluster, data = km_clusters, fun = 'enrichGO', OrgDb  = "org.Mm.eg.db", ont='BP', qvalueCutoff = 0.05, readable = T, keyType = "SYMBOL", universe = universe) 
+
+# extract top 5 terms per cluster
+n <- 5
+go_list <- shf_wt_go@compareClusterResult %>%
+  group_by(Cluster) %>%
+  slice_min(qvalue, n = n) %>%  # Select top N based on qvalue
+  summarise(GO_Terms = list(Description), .groups = "drop") %>%
+  deframe()
+
+```
+
+```{r, fig.width=10, fig.height=10}
+# Annotate go terms on the heatmap
+# Create annotation object using anno_textbox()
+go_anno <- rowAnnotation(
+  textbox = anno_textbox(
+    km_clusters$cluster, 
+    go_list, 
+    #by = 'anno_block',
+    word_wrap = T, 
+    add_new_line = T,
+   background_gp = gpar(fill = 'transparent')
+  )
+)
+top_anno_df <- data.frame(Genotype = c(rep("Wt", 100)), row.names = colnames(yhatSmoothScaled))
+cols <- colorRamp2(c(-2,2), hcl_palette = "cividis")
+ht1 <- Heatmap(yhatSmoothScaled, 
+               col =  cols,
+               column_split = top_anno_df,
+               show_column_names = F, show_row_names = F, 
+               cluster_columns = F, 
+               cluster_rows = T,
+               show_row_dend = F,
+               row_title = NULL,
+               name = "SHF lineage",
+               row_split = km_clusters$cluster,
+               row_gap = unit(1, "mm"),
+               left_annotation = ha,
+               row_order = row_order$order, 
+               right_annotation = go_anno
+               
+)
+png("plots2/StartVsEnd_SHF_lineage_WT_only.png", width = 12, height = 10, units = 'in', res = 600)
+ht1 <- draw(ht1)
+dev.off()
+```
+
+
+### JCF
+
+```{r}
+yhatSmooth <- predictSmooth(v6.1_sce_tradeseq, gene = rownames(startRes_list$JCF), nPoints = 100, tidy = FALSE) %>%
+  log1p()
+yhatSmoothScaled <- t(scale(t(yhatSmooth[, rev(grep("lineage2_conditionWt", colnames(yhatSmooth)))])))
+yhatSmoothScaled <- yhatSmoothScaled[rownames(startRes_list$JCF), ]
+```
+
+```{r}
+row_indices <- which(rownames(yhatSmoothScaled) %in% genes)
+names(row_indices) <- rownames(yhatSmoothScaled)[row_indices]
+
+# Additionally label every 50th gene (row) on the heatmap
+# Get every 50th gene
+every_20th_gene <- seq(1, nrow(yhatSmoothScaled), by = 70)
+extra_indices <- setdiff(every_20th_gene, row_indices)  # Avoid duplication
+
+# Combine both sets of indices
+final_indices <- sort(c(row_indices, extra_indices))
+
+names(final_indices) <- rownames(yhatSmoothScaled[final_indices, ])
+```
+
+```{r}
+km_clusters <- data.frame(cluster = kmeans(yhatSmoothScaled, 6)$cluster)
+km_clusters$geneid <- rownames(km_clusters)
+
+row_order = hclust(dist(yhatSmoothScaled))
+
+# label some of the rows (genes) on the heatmap
+ha = rowAnnotation(foo = anno_mark(at = final_indices, 
+                                   labels = names(final_indices), side = 'left'))
+```
+
+```{r}
+universe <- rownames(rowData(v6.1_sce_tradeseq))
+
+jcf_wt_go <- compareCluster(geneid~cluster, data = km_clusters, fun = 'enrichGO', OrgDb  = "org.Mm.eg.db", ont='BP', qvalueCutoff = 0.05, readable = T, keyType = "SYMBOL", universe = universe) 
+
+# extract top 5 terms per cluster
+n <- 5
+go_list <- jcf_wt_go@compareClusterResult %>%
+  group_by(Cluster) %>%
+  slice_min(qvalue, n = n) %>%  # Select top N based on qvalue
+  summarise(GO_Terms = list(Description), .groups = "drop") %>%
+  deframe()
+
+```
+
+```{r, fig.width=10, fig.height=10}
+# Annotate go terms on the heatmap
+# Create annotation object using anno_textbox()
+go_anno <- rowAnnotation(
+  textbox = anno_textbox(
+    km_clusters$cluster, 
+    go_list, 
+    #by = 'anno_block',
+    word_wrap = T, 
+    add_new_line = T,
+    background_gp = gpar(fill = 'transparent')
+  )
+)
+top_anno_df <- data.frame(Genotype = c(rep("Wt", 100)), row.names = colnames(yhatSmoothScaled))
+cols <- colorRamp2(c(-2,2), hcl_palette = "cividis")
+ht1 <- Heatmap(yhatSmoothScaled, 
+               col =  cols,
+               column_split = top_anno_df,
+               show_column_names = F, show_row_names = F, 
+               cluster_columns = F, 
+               cluster_rows = T,
+               show_row_dend = F,
+               row_title = NULL,
+               name = "JCF lineage",
+               row_split = km_clusters$cluster,
+               row_gap = unit(1, "mm"),
+               left_annotation = ha,
+               #row_order = row_order$order, 
+               right_annotation = go_anno
+               
+)
+png("plots2/StartVsEnd_JCF_lineage_WT_only.png", width = 12, height = 10, units = 'in', res = 600)
+ht1 <- draw(ht1)
+dev.off()
+```

@@ -1,0 +1,201 @@
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(slingshot)
+library(condiments)
+library(scater)
+library(viridis)
+library(patchwork)
+library(ggpubr)
+library(rstatix)
+library(ggh4x)
+```
+
+```{r}
+v6.1_sce <- readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V6/v6.1_slingshot_condiments/v6.1_sce_slingshot.rds")
+```
+
+# Progression test / density plots
+
+```{r}
+prog_res <- progressionTest(v6.1_sce, conditions = "Genotype", global = F, lineages = TRUE)
+prog_res$padj <- p.adjust(prog_res$p.value, "fdr")
+prog_res$padj_formatted <- format(prog_res$padj, scientific = TRUE, digits=2)
+prog_res$lineage <- c("JCF lineage", "SHF lineage")
+prog_res <- add_significance(prog_res)
+```
+
+```{r}
+metadata <- colData(v6.1_sce)[, colnames(colData(v6.1_sce)) != "slingshot"] %>% data.frame() %>% rownames_to_column("cells")
+```
+
+```{r}
+psts <- metadata %>%
+  select(cells, slingPseudotime_1.scaled, slingPseudotime_2.scaled, Genotype, clusterAnn2) %>%
+  dplyr::rename(`SHF lineage` = `slingPseudotime_1.scaled`, `JCF lineage` = slingPseudotime_2.scaled) %>%
+  pivot_longer(contains("lineage"), values_to = "pseudotime", names_to = "lineage") %>%
+  subset(!is.na(pseudotime)) %>%
+  mutate(Genotype = factor(Genotype, levels = c("Wt", "Mut")))
+```
+
+```{r, fig.width=9, fig.height=5}
+jcf_strip_background <- element_rect(fill = scales::alpha("#A5D171", 0.9), color = NA)
+shf_strip_background <- element_rect(fill = scales::alpha("#8FA2F2", 0.9), color = NA)
+
+axis <- ggh4x::guide_axis_truncated()
+
+p1 <- ggplot() +
+  geom_density(data=subset(psts, lineage == "JCF lineage"), aes(x = pseudotime, fill = Genotype, col=Genotype) ,alpha = 0.3, size=1.5) +
+  scale_color_manual(values = c("lightgray", "#E0C568FF"))+
+  scale_fill_manual(values = c("lightgray", "#E0C568FF"))+
+  scale_x_continuous(breaks = c(0, 1), labels = c("        JCF", "CM        ")) +
+  theme_minimal(base_size = 20) +
+  theme(legend.position = "right", 
+        panel.grid = element_blank(), 
+        axis.ticks = element_blank(), 
+        strip.text = element_text(size = 18), 
+        axis.text.y = element_blank(),
+        axis.line.x = element_line(arrow = arrow(length = unit(0.15, "inches")), color = "gray40"), 
+        axis.text.x = element_text(margin = margin(t = 15))) +
+    guides(x = axis, y = axis) +
+    facet_wrap2(
+    ~ lineage, 
+    strip = ggh4x::strip_themed(
+      background_x = jcf_strip_background)
+    ) + 
+
+  geom_text(data = subset(prog_res, lineage == "JCF lineage"),
+                               aes(x = 0.5, y = Inf, label = p.value.signif), 
+                               vjust = 1.5, color="gray40", size=6) +
+  ylab("") + xlab("")
+p1
+#ggsave("plots/Density_Pseudotime_JCF_lineage.pdf", width = 9, height = 5, bg="transparent")
+
+p2 <- ggplot() +
+  geom_density(data=subset(psts, lineage == "SHF lineage"), aes(x = pseudotime, fill = Genotype, col=Genotype) ,alpha = 0.3, size=1.5) +
+  scale_color_manual(values = c("lightgray", "#E0C568FF"))+
+  scale_fill_manual(values = c("lightgray", "#E0C568FF"))+
+  scale_x_continuous(breaks = c(0, 1), labels = c("        SHF", "CM        ")) +
+  theme_minimal(base_size = 20) +
+  theme(legend.position = "right", 
+        panel.grid = element_blank(), 
+        axis.ticks = element_blank(), 
+        strip.text = element_text(size = 18), 
+        axis.text.y = element_blank(),
+        axis.line.x = element_line(arrow = arrow(length = unit(0.15, "inches")), color = "gray40"), 
+        axis.text.x = element_text(margin = margin(t = 15))) +
+    guides(x = axis, y = axis) +
+    facet_wrap2(
+    ~ lineage, 
+    strip = ggh4x::strip_themed(
+      background_x = shf_strip_background)
+    ) + 
+
+  geom_text(data = subset(prog_res, lineage == "SHF lineage"),
+                               aes(x = 0.5, y = Inf, label = p.value.signif), 
+                               vjust = 1.5, color="gray40", size=6) +
+  ylab("") + xlab("")
+p2
+
+#ggsave("plots/Density_Pseudotime_SHF_lineage.pdf", width = 9, height = 5, bg="transparent")
+```
+
+# Downsample Mut cells to Wt cell count
+
+```{r}
+# Define the number of WT cells
+wt_count_jcf <- psts %>% filter(Genotype == "Wt", lineage == "JCF lineage") %>% nrow()
+mut_count_jcf <- psts %>% filter(Genotype == "Mut", lineage == 'JCF lineage') %>% nrow()
+
+wt_count_shf <- psts %>% filter(Genotype == "Wt", lineage == "SHF lineage") %>% nrow()
+mut_count_shf <- psts %>% filter(Genotype == "Mut", lineage == 'SHF lineage') %>% nrow()
+
+# Filter the 'Mut' samples and downsample to match 'Wt' count
+mut_sample_jcf <- psts %>%
+  filter(Genotype == "Mut", lineage == 'JCF lineage') %>%
+  sample_n(wt_count_jcf)
+
+# Filter the 'Wt' samples
+wt_sample_jcf <- psts %>%
+  filter(Genotype == "Wt", lineage == 'JCF lineage')
+
+# Filter the 'Mut' samples and downsample to match 'Wt' count
+mut_sample_shf <- psts %>%
+  filter(Genotype == "Mut", lineage == 'SHF lineage') %>%
+  sample_n(wt_count_shf)
+
+# Filter the 'Wt' samples
+wt_sample_shf <- psts %>%
+  filter(Genotype == "Wt", lineage == 'SHF lineage')
+
+# Downsample mutant cells to match WT cell count
+downsampled_psts <- bind_rows(mut_sample_jcf, wt_sample_jcf, mut_sample_shf, wt_sample_shf)
+table(downsampled_psts$Genotype, downsampled_psts$lineage)
+
+```
+
+```{r}
+downsampled_psts %>% filter(Genotype == "Wt") %>% nrow()
+downsampled_psts %>% filter(Genotype == "Mut") %>% nrow()
+```
+
+```{r, fig.width=7, fig.height=3}
+jcf_strip_background <- element_rect(fill = scales::alpha("#A5D171", 0.9), color = NA)
+shf_strip_background <- element_rect(fill = scales::alpha("#8FA2F2", 0.9), color = NA)
+
+axis <- ggh4x::guide_axis_truncated()
+
+p1 <- ggplot() +
+  geom_density(data=subset(psts, lineage == "JCF lineage"), aes(x = pseudotime, fill = Genotype, col=Genotype) ,alpha = 0.3, size=1.5) +
+  scale_color_manual(values = c("lightgray", "#E0C568FF"))+
+  scale_fill_manual(values = c("lightgray", "#E0C568FF"))+
+  scale_x_continuous(breaks = c(0, 1), labels = c("        JCF", "CM        ")) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "right", 
+        panel.grid = element_blank(), 
+        axis.ticks = element_blank(), 
+        strip.text = element_text(size = 18), 
+        axis.text.y = element_blank(),
+        axis.line.x = element_line(arrow = arrow(length = unit(0.15, "inches")), color = "gray40"), 
+        axis.text.x = element_text(margin = margin(t = 15))) +
+    guides(x = axis, y = axis) +
+    facet_wrap2(
+    ~ lineage, 
+    strip = ggh4x::strip_themed(
+      background_x = jcf_strip_background)
+    ) + 
+
+  geom_text(data = subset(prog_res, lineage == "JCF lineage"),
+                               aes(x = 0.5, y = Inf, label = p.value.signif), 
+                               vjust = 1.5, color="gray40", size=6) +
+  ylab("") + xlab("")
+p1
+ggsave("plots/Density_Pseudotime_JCF_lineage.pdf", width = 7, height = 3, bg="transparent")
+
+p2 <- ggplot() +
+  geom_density(data=subset(psts, lineage == "SHF lineage"), aes(x = pseudotime, fill = Genotype, col=Genotype) ,alpha = 0.3, size=1.5) +
+  scale_color_manual(values = c("lightgray", "#E0C568FF"))+
+  scale_fill_manual(values = c("lightgray", "#E0C568FF"))+
+  scale_x_continuous(breaks = c(0, 1), labels = c("        SHF", "CM        ")) +
+  theme_minimal(base_size = 16) +
+  theme(legend.position = "right", 
+        panel.grid = element_blank(), 
+        axis.ticks = element_blank(), 
+        strip.text = element_text(size = 18), 
+        axis.text.y = element_blank(),
+        axis.line.x = element_line(arrow = arrow(length = unit(0.15, "inches")), color = "gray40"), 
+        axis.text.x = element_text(margin = margin(t = 15))) +
+    guides(x = axis, y = axis) +
+    facet_wrap2(
+    ~ lineage, 
+    strip = ggh4x::strip_themed(
+      background_x = shf_strip_background)
+    ) + 
+
+  geom_text(data = subset(prog_res, lineage == "SHF lineage"),
+                               aes(x = 0.5, y = Inf, label = p.value.signif), 
+                               vjust = 1.5, color="gray40", size=6) +
+  ylab("") + xlab("")
+p2
+
+ggsave("plots/Density_Pseudotime_SHF_lineage.pdf", width = 7, height = 3, bg="transparent")
+```

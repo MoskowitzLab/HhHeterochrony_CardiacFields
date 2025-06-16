@@ -1,0 +1,606 @@
+```{r, message=FALSE, warning=FALSE}
+library(Seurat)
+library(tidyverse)
+library(patchwork)
+library(scales)
+library(glmGamPoi)
+library(presto)
+library(scCustomize)
+library(ggh4x)
+library(viridis)
+library(circlize)
+library(ComplexHeatmap)
+library(rstatix)
+library(ggpubr)
+library(UCell)
+library(RColorBrewer)
+plot_path <- "plots/"
+source("/project/imoskowitz/wiktor/3-code/1-seurat/ggplot_themes.R")
+```
+
+```{r}
+v5.2 <- readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/1-v5_seurat_filtering_subsetting_v5.1_v5.2/rds_files/v5.2_harmonized_cardiac_lineage_shf_jcf.rds")
+v6.1 <- v5.2
+# Remove unnecessary columns
+v6.1[[c("mouse_gastr_label_v5.1", "mouse_gastr_ext_label_v5.2", "mouse_gastr_ext_label_v5.1", "mouse_gastr_label_v5.1", "cell_type", "cellType")]] <- NULL
+rm(v5.2)
+gc()
+```
+
+```{r}
+# Magic imputed counts = denoised
+magic_imputed <- readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/3-v5.2_MAGIC_imputation/v5.2_afterMAGIC_t11_auto.rds")
+magic_imputed <- magic_imputed$result
+```
+
+```{r, fig.width=8, fig.height=6}
+res <- "SCT_snn_res."
+DimPlot(v6.1, group.by = paste0(res, seq(.1, .5, by=.1)), label = T)& NoLegend() & theme_frameon() & coord_fixed()
+# ggsave("plots/UMAPs_various_res.pdf", width = 8, height = 6)
+```
+
+Pick resolution 0.5 and FindAllMarkers
+
+```{r, fig.width=9, fig.height=11}
+Idents(v6.1) <- "SCT_snn_res.0.5"
+markers <- FindAllMarkers(v6.1, logfc.threshold = 0.5, min.pct = 0.3, only.pos = T)
+top10 <- Extract_Top_Markers(markers)
+cividis_markers <- colorRamp2(c(-1, 0.5, 1.2), hcl_palette = "cividis")
+
+DoHeatmap(v6.1, top10, label=T, group.bar.height = 0.02, disp.min = -1, angle = 0, vjust=0.5, hjust = 0.6, size=5) +
+  scale_fill_gradientn(colors = cividis_markers(seq(-1,2))) +
+  theme(legend.text = element_text(size=12), 
+        legend.title = element_text(size=12),
+        axis.text.y = element_text(size=11)) +
+  ggtitle("Res 0.5")
+#ggsave("plots/Heatmap_FindAllMarkers_res0.5.png", width = 10, height = 11, dpi = 1200, bg="transparent")
+```
+
+```{r}
+library(openxlsx)
+write.xlsx(markers, "Table_findallmarkers_res.0.5.xlsx")
+```
+
+# Merge clusters
+
+```{r}
+# Merge clusters
+v6.1 <- RenameIdents(v6.1, c(`0` = "JCF", `1` = "SHF", `2` = "JCF", `3` = "SHF", `4` = "SHF", `5` = "JCF", `6` = "JCF", `7` = "CM", `8` = "CM"))
+v6.1$clusterAnn <- Idents(v6.1)
+
+# Version 2 of annotation separating clusters 7 and 8 into early CM and CM
+v6.1[[]] <- v6.1[[]] %>%
+  mutate(clusterAnn2 = recode(SCT_snn_res.0.5, !!!c(`0` = "JCF", `1` = "SHF", `2` = "JCF", `3` = "SHF", `4` = "SHF", `5` = "JCF", `6` = "JCF", `7` = "intermediate", `8` = "CM")))
+
+cluster_colors <- c(`JCF` = "#A5D171", `SHF`= "#8FA2F2" ,`CM` = "#EF6507")
+
+v6.1$clusterAnn <- factor(v6.1$clusterAnn, levels= c("JCF", "SHF", "CM"))
+Idents(v6.1) <- v6.1$clusterAnn
+
+
+cluster_colors <- c(`JCF` = "#A5D171", `SHF`= "#8FA2F2" ,`intermediate` = "#FF8C00" ,`CM` = "#FF4500") 
+v6.1$clusterAnn2 <- factor(v6.1$clusterAnn2, levels= c("JCF", "SHF", "intermediate" ,"CM"))
+Idents(v6.1) <- "clusterAnn2"
+
+```
+
+## Find All markers on new cell ids
+
+```{r, fig.width=9, fig.height=6}
+markers <- FindAllMarkers(v6.1, logfc.threshold = 2, min.pct = 0.3, only.pos = T)
+top10 <- Extract_Top_Markers(markers)
+cividis_markers <- colorRamp2(c(-0.8, 1, 1.7), hcl_palette = "cividis")
+
+DoHeatmap(v6.1, top10, label=F, group.colors = cluster_colors ,group.bar.height = 0.03, disp.min = -1, angle = 0, vjust=0.5, hjust = 0.6, size=5) +
+  scale_fill_gradientn(colors = cividis_markers(seq(-1,2))) +
+  theme(legend.text = element_text(size=12), 
+        legend.title = element_text(size=12),
+        axis.text.y = element_text(size=11))
+
+ggsave("plots/Heatmap_FindAllMarkers_clusterAnno.png", width = 9, height = 6, dpi = 1200, bg="transparent")
+```
+
+```{r, fig.width=9, fig.height=6}
+markers <- FindAllMarkers(subset(v6.1, Genotype == "Wt"), logfc.threshold = 2, min.pct = 0.3, only.pos = T)
+top10 <- Extract_Top_Markers(markers)
+cividis_markers <- colorRamp2(c(-0.8, 1, 1.7), hcl_palette = "cividis")
+
+DoHeatmap(subset(v6.1, Genotype == "Wt"), top10, label=F, group.colors = cluster_colors ,group.bar.height = 0.03, disp.min = -1, angle = 0, vjust=0.5, hjust = 0.6, size=5) +
+  scale_fill_gradientn(colors = cividis_markers(seq(-1,2))) +
+  theme(legend.text = element_text(size=12), 
+        legend.title = element_text(size=12),
+        axis.text.y = element_text(size=11))
+ggsave("plots/Heatmap_FindAllMarkers_clusterAnno_WT_only.png", width = 9, height = 6, dpi = 1200, bg="transparent")
+```
+
+```{r}
+v6.1$Genotype <- case_match(v6.1$Genotype, "Wt" ~ 'Ctl', 'Mut' ~ 'Gli3TOE')
+v6.1$Genotype <- factor(v6.1$Genotype, levels=c('Ctl', 'Gli3TOE'))
+saveRDS(v6.1, 'v6.1.rds')
+```
+
+# Plot UMAPs
+
+```{r}
+metadata <- v6.1[[]] %>%
+  rownames_to_column("Barcode") %>%
+  left_join(
+    data.frame(v6.1@reductions$umap@cell.embeddings) %>% rownames_to_column("Barcode"),
+    by = "Barcode"
+  )
+cluster_label_coords <- metadata %>%
+  group_by(clusterAnn2) %>%
+  summarise(umap_1 = mean(umap_1),
+            umap_2 = mean(umap_2))
+```
+
+```{r, fig.width=4, fig.height=4}
+# Res 0.5
+DimPlot(v6.1, group.by = "SCT_snn_res.0.5", label=T, pt.size=0.7) +
+  coord_fixed() + 
+  NoLegend() +
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("") &
+  theme(rect = element_rect(fill = 'transparent'))
+ggsave("plots/UMAP_res.0.5.png", width = 4, height = 4, bg="transparent", dpi = 1200)
+
+DimPlot(v6.1, cols = cluster_colors, pt.size = 0.7, label = T) +
+  coord_fixed() + 
+  NoLegend() +
+  theme_truncated_axes()+
+  guides_truncated() +
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("") &
+  theme(rect = element_rect(fill = 'transparent'))
+ggsave("plots/UMAP_clusterAnn.png", width = 4, height = 4, bg="transparent", dpi = 1200)
+
+DimPlot(v6.1, cols = cluster_colors, pt.size = 0.7, label = F) +
+  coord_fixed() + 
+  NoLegend() +
+  theme_truncated_axes()+
+  guides_truncated() +
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("") &
+  theme(rect = element_rect(fill = 'transparent'))
+ggsave("plots/UMAP_clusterAnn_B.png", width = 4, height = 4, bg="transparent", dpi = 1200)
+
+DimPlot(v6.1, cols = cluster_colors, pt.size = 0.7, label = F) +
+  coord_fixed() + 
+  NoLegend() +
+  NoAxes()+
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("") &
+  theme(rect = element_rect(fill = 'transparent'))
+ggsave("plots/UMAP_clusterAnn_C.png", width = 4, height = 4, bg="transparent", dpi = 1200)
+
+DimPlot(v6.1, group.by = 'Genotype' ,cols = c("lightgray", "#E0C568FF"), pt.size = 0.1, label = F, alpha = .7) +
+  coord_fixed() + 
+  NoAxes() +
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("") &
+  theme(rect = element_rect(fill = 'transparent'))
+ggsave("plots/UMAP_colorByGenotype.png", width = 4, height = 4, bg="transparent", dpi = 1200)
+```
+
+```{r}
+DimPlot(v6.1, group.by = "SCT_snn_res.0.5", label=T, pt.size=0.7) +
+  coord_fixed() + 
+  NoLegend() +
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("") &
+  theme(rect = element_rect(fill = 'transparent'))
+ggsave("plots/UMAP_res.0.5.svg", width = 4, height = 4, bg="transparent")
+
+DimPlot(v6.1, cols = cluster_colors, pt.size = 0.7, label = T) +
+  coord_fixed() + 
+  NoLegend() +
+  theme_truncated_axes()+
+  guides_truncated() +
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("") &
+  theme(rect = element_rect(fill = 'transparent'))
+ggsave("plots/UMAP_clusterAnn.svg", width = 4, height = 4, bg="transparent")
+
+DimPlot(v6.1, cols = cluster_colors, pt.size = 0.7, label = F) +
+  coord_fixed() + 
+  NoLegend() +
+  theme_truncated_axes()+
+  guides_truncated() +
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("") &
+  theme(rect = element_rect(fill = 'transparent'))
+ggsave("plots/UMAP_clusterAnn_B.svg", width = 4, height = 4, bg="transparent")
+
+DimPlot(v6.1, cols = cluster_colors, pt.size = 0.7, label = F) +
+  coord_fixed() + 
+  NoLegend() +
+  NoAxes()+
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("") &
+  theme(rect = element_rect(fill = 'transparent'))
+ggsave("plots/UMAP_clusterAnn_C.svg", width = 4, height = 4, bg="transparent")
+
+cols <- c("gray", "#906a44")
+
+DimPlot(v6.1, group.by = 'Genotype' ,cols = cols, pt.size = 0.5, label = F, shuffle = T) +
+  coord_fixed() +
+  xlab("UMAP1") + ylab("UMAP2")+
+  #theme_truncated_axes() +
+  #guides_truncated() +
+  NoAxes() +
+  ggtitle("") +
+  theme(rect = element_rect(fill = 'transparent'))
+ggsave("plots/UMAP_colorByGenotype.svg", width = 4, height = 4, bg="transparent")
+#c("lightgray", "#E0C568FF")
+```
+
+```{r}
+p1 <- DimPlot(v6.1, group.by = 'Genotype', cells = Cells(v6.1)[v6.1$Genotype == "Ctl"],
+              cols = cols[1], pt.size = 0.1) +
+  coord_fixed() +
+  xlab("UMAP1") + ylab("UMAP2") +
+  ggtitle("Ctl") +
+  theme_truncated_axes() +
+  guides_truncated() +
+  NoLegend()
+
+p2 <- DimPlot(subset(v6.1, Genotype=='Gli3TOE'), group.by = 'Genotype', cols = cols[2], pt.size = 0.1) +
+  coord_fixed() +
+  ggtitle("Gli3TOE") +
+  NoAxes() +
+  NoLegend()
+
+p1 + p2 + plot_layout(guides = "collect")
+ggsave("plots/UMAP_colorByGenotype_splitByGenotype.svg", width = 8, height = 4, bg="transparent")
+
+```
+
+# Tyser clusters feature plots
+
+```{r}
+Tyser_markers <- list(Me4 = c("Sfrp5","Wnt2","Gata4","Gata5","Tbx5","Tenm4","Bmp2","Hcn4","Rem1","Dbt"),
+                      Me7 = c("Bcat1","Crabp1","Nnat","Aplnr","Ifitm1","Meis1","Car14","Hapln1","Isl1","Igfbpl1"),
+                   Me5= c("Phlda2","Pmp22","Nrp1","Hand1","Tmem88","Bmp4","Ccdc80","Tmem108","Msx2","Ugdh"),
+                   Me3 = c("Actc1","Acta2","Myl7","Myl4","Tnnt2","Tnni1","Ttn","Tnnc1","Myh6","Myl3"))
+
+# Extract the list of genes present in the Seurat object
+seurat_genes <- rownames(v6.1)
+
+# Function to filter the markers list
+filter_markers <- function(markers_list, seurat_genes) {
+  filtered_list <- lapply(markers_list, function(gene_set) {
+    intersect(gene_set, seurat_genes)  # Keep only genes present in the Seurat object
+  })
+  return(filtered_list)
+}
+Tyser_markers <- filter_markers(Tyser_markers, seurat_genes)
+
+v6.1 <- AddModuleScore_UCell(v6.1, Tyser_markers)
+v6.1 <- SmoothKNN(v6.1, c("Me4_UCell", "Me7_UCell", "Me5_UCell", "Me3_UCell"), reduction="harmony")
+```
+
+```{r}
+custom_breaks <- function(x) {
+  seq(min(x), max(x), length.out = 2) # 2 breaks: min, max
+}
+```
+
+```{r, fig.width=12, fig.height=6}
+
+p1 = FeaturePlot(v6.1, features = "Me4_UCell_kNN", order = TRUE, coord.fixed = T, pt.size = 0.2, max.cutoff = 0.2) +
+  scale_color_viridis(option='E', breaks = custom_breaks, labels= c("low", 'high')) +
+  NoAxes() +
+  ggtitle("Intermediate") &
+  theme(plot.title = element_text(size=12, hjust=0.5),rect = element_rect(fill = "transparent"))
+
+
+p2 = FeaturePlot(v6.1, features = "Me3_UCell_kNN", order = TRUE, coord.fixed = T, pt.size = 0.2) +
+  scale_color_viridis(option='E', breaks = custom_breaks, labels= c("low", 'high')) +
+  NoAxes() +
+  ggtitle("CM") &
+  theme(plot.title = element_text(size=12, hjust=0.5),rect = element_rect(fill = "transparent"))
+
+p3 = FeaturePlot(v6.1, features = "Me5_UCell_kNN", order = TRUE, coord.fixed = T, pt.size = 0.2, max.cutoff = .4) +
+  scale_color_viridis(option='E', breaks = custom_breaks, labels= c("low", 'high')) +
+  NoAxes() +
+  ggtitle("JCF") &
+  theme(plot.title = element_text(size=12, hjust=0.5),rect = element_rect(fill = "transparent"))
+
+p4 = FeaturePlot(v6.1, features = "Me7_UCell_kNN", order = TRUE, coord.fixed = T, pt.size = 0.2, max.cutoff = 0.25) +
+  scale_color_viridis(option='E', breaks = custom_breaks, labels= c("low", 'high')) +
+  NoAxes() +
+  ggtitle("SHF") &
+  theme(plot.title = element_text(size=12, hjust=0.5),rect = element_rect(fill = "transparent"))
+
+
+p1+p2+p3+p4 + plot_layout(ncol=4) & theme(plot.background = element_rect(fill='transparent'))
+ggsave('plots/Feature_Tyser_scores.svg', width = 12, height = 6, bg='transparent')
+```
+
+```{r}
+#saveRDS(v6.1, "v6.1.rds")
+# v6.1 <- readRDS("v6.1.rds")
+```
+
+# Known markers
+
+## WT only
+
+```{r}
+wt_subset <- subset(v6.1, Genotype == "Ctl")
+markers <- list(JCF = c("Hand1", "Mab21l2", "Foxf1"), 
+                SHF = c("Isl1", "Osr1", "Fgf8", "Fgf10", "Arg1"), 
+                CM = c("Ttn", "Myh6", "Myl7", "Nkx2-5", "Gata4", "Tbx5"))
+markers_vector <- unlist(markers)
+names(markers_vector) <- NULL
+
+magic_imputed_subset <- magic_imputed[colnames(wt_subset), markers_vector]
+magic_imputed_subset <- scale(magic_imputed_subset, scale=T, center = T)
+magic_imputed_subset <- t(magic_imputed_subset)
+```
+
+```{r, fig.height=3.2, fig.width=6}
+cluster_colors <- c(`JCF` = "#A5D171", `SHF`= "#8FA2F2" ,`intermediate` = "#DAA03DFF" ,`CM` = "#EF6507")
+color = colorRamp2(c(-1,0,1), hcl_palette = "cividis")
+
+top_annotation <- HeatmapAnnotation(df = select(wt_subset[[]], clusterAnn2), col = list(clusterAnn2 = cluster_colors),show_annotation_name = F, show_legend = T, simple_anno_size = unit(0.3, "cm"), annotation_legend_param = list(title=""))
+
+htmp <- Heatmap(magic_imputed_subset, col=color ,column_split = wt_subset$clusterAnn2, show_column_names = F, cluster_columns = F, heatmap_legend_param = list(title="Relative expression", legend_direction="horizontal", title_position = "topcenter"), top_annotation = top_annotation, column_title = NULL)
+
+png("plots/Heatmap_SHF_JCF_CM_knownMarkers_WT_only.png", width = 6, height = 3.2, res = 1200, bg="transparent", units = "in")
+draw(htmp, heatmap_legend_side="bottom")
+dev.off()
+```
+
+## WT & Mut
+
+```{r}
+genotype_colors <- c(Ctl="gray", Gli3TOE="#906a44")
+```
+
+```{r, fig.height=3.2, fig.width=6}
+magic_imputed_subset <- magic_imputed[, markers_vector]
+magic_imputed_subset <- scale(magic_imputed_subset, scale=T, center = T)
+magic_imputed_subset <- t(magic_imputed_subset)
+
+color = colorRamp2(c(-1,0,1), hcl_palette = "cividis")
+
+top_annotation <- HeatmapAnnotation(df = dplyr::select(v6.1[[]], clusterAnn2, Genotype), col = list(clusterAnn2 = cluster_colors, Genotype = genotype_colors),show_annotation_name = F, show_legend = T, simple_anno_size = unit(0.3, "cm"), annotation_legend_param = list(title=""))
+
+htmp <- Heatmap(magic_imputed_subset, col=color ,column_split = v6.1$clusterAnn2, show_column_names = F, cluster_columns = F, heatmap_legend_param = list(title="Relative expression", legend_direction="horizontal", title_position = "topcenter"), top_annotation = top_annotation, column_title = NULL)
+
+png("plots/Heatmap_SHF_JCF_CM_knownMarkers_WT&MUT_only.png", width = 6, height = 3.2, res = 1200, bg="transparent", units = "in")
+draw(htmp, heatmap_legend_side="bottom")
+dev.off()
+```
+
+# Hh score
+
+## WT
+
+```{r}
+hh_activity <- list(Hh_activity = c("Gli1", "Hhip", "Ptch1"))
+
+v6.1 <- AddModuleScore_UCell(v6.1, hh_activity)
+v6.1 <- SmoothKNN(v6.1,
+                           signature.names = "Hh_activity_UCell",
+                           reduction="harmony")
+
+v6.1 <- AddModuleScore(v6.1, hh_activity, name = "Hh_activity", assay = "RNA", slot = 'data')
+```
+
+```{r}
+saveRDS(v6.1, "v6.1.rds")
+```
+
+```{r, fig.width=4, fig.height=4}
+FeaturePlot(subset(v6.1, Genotype == "Ctl"), "Hh_activity_UCell_kNN", order = T, max.cutoff = 0.05, pt.size = .6) + 
+  NoAxes() + 
+  coord_fixed() +
+  scale_color_viridis(option = "E",breaks = custom_breaks, labels= c("low", 'high')) +
+  ggtitle("Hh activity score") &
+  theme(rect = element_rect(fill='transparent'))
+#ggsave("plots/FeaturePlot_Hh_activity_score_WT.png", width = 4, height = 4, bg="transparent", dpi =1200)
+ggsave("plots/FeaturePlot_Hh_activity_score_WT.svg", width = 4, height = 4, bg="transparent")
+```
+
+```{r}
+FeaturePlot(subset(v6.1, Genotype == "Ctl"), "Hh_activity_UCell_kNN", order = T, max.cutoff = 0.05, pt.size = .6) + 
+  coord_fixed() +
+  scale_color_viridis(option = "E",breaks = custom_breaks, labels= c("low", 'high')) +
+  #ggtitle("Hh activity score") &
+  ggtitle("") +
+  theme_truncated_axes() +
+  guides_truncated() +
+  xlab("UMAP1") + ylab("UMAP2") +
+  theme(rect = element_rect(fill='transparent'))
+#ggsave("plots/FeaturePlot_Hh_activity_score_WT.png", width = 4, height = 4, bg="transparent", dpi =1200)
+ggsave("plots/FeaturePlot_Hh_activity_score_WT.svg", width = 4, height = 4, bg="transparent")
+```
+
+## Global
+
+### Stats
+
+```{r}
+global_comparison <- v6.1[[]] %>%
+  wilcox_test(Hh_activity_UCell_kNN ~ Genotype) %>%
+  add_xy_position() %>%
+  add_x_position() %>%
+  add_significance()
+```
+
+```{r}
+stats_clusterwise <- v6.1[[]] %>%
+  group_by(clusterAnn2) %>%
+  wilcox_test(Hh_activity_UCell_kNN ~ Genotype) %>%
+  adjust_pvalue(method='fdr') %>% 
+  add_xy_position(x="Genotype") %>%
+  add_significance()
+
+write_csv(stats_clusterwise[c(1:9,14)], 'tables/Wilcox_clusterwise_Hh_activity_OEvsCtl.csv')
+```
+
+## Violins
+
+```{r, fig.height=3, fig.width=3}
+v6.1[[]] %>%
+  ggplot(aes(x=Genotype, y = Hh_activity_UCell_kNN)) +
+  geom_violin(aes(fill=Genotype, color = Genotype), linewidth=1, scale='width')+
+  stat_summary(fun = median, fun.min = median, fun.max = median,
+               geom = "crossbar", width = 0.2, color = "white", size = 0.2) +
+  scale_color_manual(values =  c("gray", "#906a44"))+
+  scale_fill_manual(values =  c("gray", "#906a44"))+
+  theme_light(base_size = 18) +
+  theme(axis.ticks = element_blank(), legend.position = 'none', panel.grid = element_blank(), axis.title.y = element_text(size=14), axis.text.y = element_text(size=12), rect = element_rect(fill='transparent'), plot.background = element_rect(fill='transparent'), panel.background = element_rect(fill = 'transparent')) +
+  ylab("Hh activity score") + xlab("") + 
+  #stat_pvalue_manual(global_comparison, label = "p = {p}", size=4) +
+  stat_pvalue_manual(global_comparison, label = "p.signif", size=4, tip.length=0) +
+  scale_y_continuous(breaks = breaks_pretty(n=2.5), expand = expansion(add=c(0.01, 0.05)))
+
+#ggsave("plots/Violin_Hh_score_global.png", width = 3, height = 3, bg='transparent', dpi=1200)
+ggsave("plots/Violin_Hh_score_global.svg", width = 3, height = 3, bg='transparent')
+```
+
+```{r, fig.height=3, fig.width=3}
+v6.1[[]] %>%
+  ggplot(aes(x=Genotype, y = Hh_activity_UCell_kNN)) +
+  geom_boxplot(aes(fill=Genotype, color = Genotype), linewidth=1)+
+  stat_summary(fun = median, fun.min = median, fun.max = median,
+               geom = "crossbar", width = 0.2, color = "white", size = 0.2) +
+  scale_color_manual(values =  c("gray", "#906a44"))+
+  scale_fill_manual(values =  c("gray", "#906a44"))+
+  theme_light(base_size = 18) +
+  theme(axis.ticks = element_blank(), legend.position = 'none', panel.grid = element_blank(), axis.title.y = element_text(size=14), axis.text.y = element_text(size=12), rect = element_rect(fill='transparent'), plot.background = element_rect(fill='transparent'), panel.background = element_rect(fill = 'transparent')) +
+  ylab("Hh activity score") + xlab("") + 
+  #stat_pvalue_manual(global_comparison, label = "p = {p}", size=4) +
+  stat_pvalue_manual(global_comparison, label = "p.signif", size=4, tip.length=0) +
+  scale_y_continuous(breaks = breaks_pretty(n=2.5), expand = expansion(add=c(0.01, 0.05)))
+
+ggsave("plots/Box_Hh_score_global.svg", width = 3, height = 3, bg='transparent')
+```
+
+```{r, fig.width=9, fig.height=3}
+cluster_colors <- c(`JCF` = "#A5D171", `SHF`= "#8FA2F2" ,`intermediate` = "#FF8C00" ,`CM` = "#FF4500")
+# Convert colors to a list of element_rect objects with transparency
+strip_backgrounds <- lapply(cluster_colors, function(color) element_rect(fill = scales::alpha(color, 0.9), color = NA))
+
+plots <- ggplot(v6.1[[]], aes(x = Genotype, y = Hh_activity_UCell_kNN)) +
+  geom_violin(aes(fill = Genotype, color= Genotype)) +
+  #stat_pvalue_manual(stats_clusterwise, label = "FDR = {format(p.adj, scientific = TRUE, digits = 2)}") +
+  stat_pvalue_manual(stats_clusterwise, label = "p.adj.signif", tip.length=0) +
+   stat_summary(fun = median, fun.min = median, fun.max = median,
+               geom = "crossbar", width = 0.2, color = "white", size = 0.2)+
+  theme_light(base_size = 18) +
+  labs(x = "", y = "Hh activity score") +
+  theme(
+    axis.ticks = element_blank(),
+    legend.position = 'none',
+    panel.grid = element_blank(),
+    strip.text = element_text(margin = margin(t = 6, b = 0), size = 16),
+    axis.title.y = element_text(size=14),
+    axis.text.y = element_text(size=12), 
+    panel.spacing = unit(2, "lines"),
+    rect = element_rect(fill='transparent'), plot.background = element_rect(fill='transparent'), panel.background = element_rect(fill = 'transparent')
+  ) +
+  scale_color_manual(values = c("gray", "#906a44"))+
+  scale_fill_manual(values = c("gray", "#906a44"))+
+  scale_y_continuous(expand = expansion(add = c(0.01, 0.03)), breaks = scales::breaks_pretty(n = 2.5)) +
+  facet_wrap2(
+    ~ clusterAnn2, 
+    ncol = 4, 
+    #scales = "free_y", 
+    strip = ggh4x::strip_themed(
+      background_x = strip_backgrounds
+    )
+  )
+plots
+ggsave("plots/Vln_Hh_activity_Clusters.svg", width = 9, height = 3, bg="transparent")
+
+```
+
+```{r, fig.width=9, fig.height=3}
+ggplot(v6.1[[]], aes(x = Genotype, y = Hh_activity_UCell_kNN)) +
+  geom_boxplot(aes(fill = Genotype, color= Genotype)) +
+  stat_summary(fun = median, fun.min = median, fun.max = median,
+               geom = "crossbar", width = 0.2, color = "white", size = 0.2) +
+  stat_pvalue_manual(stats_clusterwise, label = "p.adj.signif", tip.length = 0) +
+  theme_light(base_size = 18) +
+  labs(x = "", y = "Hh activity score") +
+  theme(
+    axis.ticks = element_blank(),
+    legend.position = 'none',
+    panel.grid = element_blank(),
+    strip.text = element_text(margin = margin(t = 3, b = 0), size = 16),
+    axis.title.y = element_text(size=14),
+    axis.text.y = element_text(size=12), 
+    rect = element_rect(fill='transparent'), 
+    plot.background = element_rect(fill='transparent'), 
+    panel.background = element_rect(fill = 'transparent'),
+    panel.spacing = unit(1.5, "lines")
+  ) +
+  scale_color_manual(values = c("gray", "#906a44")) +
+  scale_fill_manual(values = c("gray", "#906a44")) +
+  scale_y_continuous(expand = expansion(add = c(0.01, 0.03)), 
+                     breaks = scales::breaks_pretty(n = 2.5)) +
+  facet_wrap2(
+    ~ clusterAnn2, 
+    ncol = 4, 
+    #scales = "free_y", 
+    strip = ggh4x::strip_themed(
+      background_x = strip_backgrounds
+    )
+  )
+ggsave("plots/Box_Hh_activity_Clusters.svg", width = 9, height = 3, bg="transparent")
+```
+
+```{r}
+ctl <-v6.1[[]] %>%
+  filter(Genotype == 'Ctl')
+kruskal_test(Hh_activity_UCell_kNN ~ clusterAnn2, data=ctl)
+```
+
+```{r}
+pairwise_wilcox <- ctl %>%
+  pairwise_wilcox_test(Hh_activity_UCell_kNN~ clusterAnn2, p.adjust.method = 'BH', ref.group = 'CM') %>%
+  add_xy_position(x="clusterAnn2") %>%
+  add_significance()
+pairwise_wilcox
+write_csv(pairwise_wilcox[1:9], 'tables/Pairwise_Wilcox_Hh_activity_Ctl.csv')
+```
+
+```{r, fig.height=3, fig.width=5}
+plot <- ctl %>%
+  ggplot(aes(x=clusterAnn2, y = Hh_activity_UCell_kNN)) +
+  geom_violin(aes(fill=clusterAnn2, color = clusterAnn2), scale='width')+
+  stat_summary(fun = median, fun.min = median, fun.max = median,
+               geom = "crossbar", width = 0.2, color = "white", size = 0.2) +
+  scale_color_manual(values =  cluster_colors)+
+  scale_fill_manual(values = cluster_colors)+
+  theme_light(base_size = 18) +
+  theme(
+    axis.ticks = element_blank(),
+    legend.position = 'none',
+    panel.grid = element_blank(),
+    strip.text = element_text(margin = margin(t = 6, b = 0), size = 16),
+    strip.background = element_rect(fill = "gray", color = "gray", linewidth = 0.3), 
+    axis.title.y = element_text(size=14),
+    axis.text.y = element_text(size=12), 
+    rect = element_rect(fill='transparent'), 
+    plot.background = element_rect(fill='transparent'), 
+    panel.background = element_rect(fill = 'transparent')
+  ) +
+  ylab("Hh activity score") + xlab("")+
+  stat_pvalue_manual(pairwise_wilcox, label = "p.adj.signif", size=4, tip.length=0) +
+  scale_y_continuous(expand = expansion(add = c(0.01, 0.03)), breaks = scales::breaks_pretty(n = 2.5)) +
+  facet_wrap(~Genotype)
+plot
+#ggsave("plots/Violin_Hh_score_Ctl.png", width = 3, height = 3, bg='transparent', dpi=1200)
+ggsave("plots/Violin_Hh_score_Ctl.svg", width = 5, height = 3, bg='transparent')
+```
+
+```{r, fig.height=3.5, fig.width=15}
+plot + plots + plot_layout(widths = c(1,2.3)) &  
+  theme(plot.background = element_rect(fill='transparent'), panel.background = element_rect(fill = 'transparent'))
+ggsave("plots/Violin_Hh_score_Ctl_clusterwise.svg", width = 15, height = 3.5, bg='transparent')
+```
