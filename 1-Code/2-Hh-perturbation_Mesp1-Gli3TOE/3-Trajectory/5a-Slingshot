@@ -9,11 +9,11 @@ library(ggpubr)
 library(SingleCellExperiment)
 library(purrr)
 library(condiments)
-source("/project/imoskowitz/wiktor/3-code/1-seurat/ggplot_themes.R")
+source("./3-code/1-seurat/ggplot_themes.R")
 ```
 
 ```{r}
-v6.1 <-  readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V6/V6.1_Current/v6.1.rds")
+v6.1 <-  readRDS("./2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V6/V6.1_Current/v6.1.rds")
 v6.1_sce <- as.SingleCellExperiment(v6.1, assay="SCT")
 ```
 

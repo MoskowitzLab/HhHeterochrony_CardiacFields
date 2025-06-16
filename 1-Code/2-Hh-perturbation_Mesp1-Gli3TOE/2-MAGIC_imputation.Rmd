@@ -11,11 +11,11 @@ library(tidyverse)
 library(reticulate)
 library(viridis)
 library(Seurat)
-use_condaenv('/project/imoskowitz/itarampoulous/B-CondaEnvs/Pymagic')
+use_condaenv('./B-CondaEnvs/Pymagic')
 ```
 
 ```{r}
-v5.2 <- readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/v5_seurat_filtering_subsetting_v5.1_v5.2/rds_files/v5.2_harmonized_cardiac_lineage_shf_jcf.rds")
+v5.2 <- readRDS("./2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/v5_seurat_filtering_subsetting_v5.1_v5.2/rds_files/v5.2_harmonized_cardiac_lineage_shf_jcf.rds")
 ```
 
 # Prep counts

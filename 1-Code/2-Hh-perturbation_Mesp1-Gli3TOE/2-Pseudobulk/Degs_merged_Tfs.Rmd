@@ -17,8 +17,8 @@ library(RColorBrewer)
 library(enrichplot)
 library(openxlsx)
 library(patchwork)
-source("/project/imoskowitz/wiktor/3-code/1-seurat/DGE.R")
-source("/project/imoskowitz/wiktor/3-code/1-seurat/ggplot_themes.R")
+source("./3-code/1-seurat/DGE.R")
+source("./3-code/1-seurat/ggplot_themes.R")
 ```
 
 ```{r}
@@ -26,7 +26,7 @@ merged <- read.xlsx('tables/DEGS_jcf_shf_merged.xlsx')
 ```
 
 ```{r}
-TF_db <- read_csv('/project/imoskowitz/wiktor/5-Reference_tables/Mm_TF_DB_modified.csv')
+TF_db <- read_csv('./5-Reference_tables/Mm_TF_DB_modified.csv')
 ```
 
 ```{r}

@@ -16,7 +16,7 @@ MatrixToSeurat_rmDoublet <- function(DGEmatrix, whatSample, whatGenotype, double
 	seuratObject[["percent.mt"]] <- PercentageFeatureSet(seuratObject, pattern = "^mt-")
 	Idents(seuratObject) <- seuratObject$Sample
 	
-	source("/project/imoskowitz/shared/data_collaborators/AlexG/code/AddDoublets.R")
+	source("./AlexG/code/AddDoublets.R")
 	seuratObject <- AddDoublets(seuratObject, doubletfile) 
 	
 	print("Number of doublets detected")

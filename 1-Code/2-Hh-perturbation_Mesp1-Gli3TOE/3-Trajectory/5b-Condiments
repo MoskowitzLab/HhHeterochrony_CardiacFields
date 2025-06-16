@@ -11,7 +11,7 @@ library(ggh4x)
 ```
 
 ```{r}
-v6.1_sce <- readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V6/v6.1_slingshot_condiments/v6.1_sce_slingshot.rds")
+v6.1_sce <- readRDS("./2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V6/v6.1_slingshot_condiments/v6.1_sce_slingshot.rds")
 ```
 
 # Progression test / density plots

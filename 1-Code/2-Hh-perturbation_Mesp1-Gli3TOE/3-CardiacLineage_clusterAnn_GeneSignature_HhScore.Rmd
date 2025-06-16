@@ -15,11 +15,11 @@ library(ggpubr)
 library(UCell)
 library(RColorBrewer)
 plot_path <- "plots/"
-source("/project/imoskowitz/wiktor/3-code/1-seurat/ggplot_themes.R")
+source("./3-code/1-seurat/ggplot_themes.R")
 ```
 
 ```{r}
-v5.2 <- readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/1-v5_seurat_filtering_subsetting_v5.1_v5.2/rds_files/v5.2_harmonized_cardiac_lineage_shf_jcf.rds")
+v5.2 <- readRDS("./2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/1-v5_seurat_filtering_subsetting_v5.1_v5.2/rds_files/v5.2_harmonized_cardiac_lineage_shf_jcf.rds")
 v6.1 <- v5.2
 # Remove unnecessary columns
 v6.1[[c("mouse_gastr_label_v5.1", "mouse_gastr_ext_label_v5.2", "mouse_gastr_ext_label_v5.1", "mouse_gastr_label_v5.1", "cell_type", "cellType")]] <- NULL
@@ -29,7 +29,7 @@ gc()
 
 ```{r}
 # Magic imputed counts = denoised
-magic_imputed <- readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/3-v5.2_MAGIC_imputation/v5.2_afterMAGIC_t11_auto.rds")
+magic_imputed <- readRDS("./2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/3-v5.2_MAGIC_imputation/v5.2_afterMAGIC_t11_auto.rds")
 magic_imputed <- magic_imputed$result
 ```
 

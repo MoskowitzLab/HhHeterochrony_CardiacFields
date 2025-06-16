@@ -67,7 +67,7 @@ library(tidyverse)
 library(reticulate)
 library(viridis)
 library(Seurat)
-use_condaenv('/project/imoskowitz/itarampoulous/B-CondaEnvs/Pymagic')
+use_condaenv('./B-CondaEnvs/Pymagic')
 ```
 ```{r}
 scores_matrix <- dplyr::select(v6.1[[]], CM_UCell, Hh_activity_UCell)

@@ -11,7 +11,7 @@ library(scales)
 ```
 
 ```{r}
-magic_counts <- readRDS("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/3-v5.2_MAGIC_imputation/v5.2_afterMAGIC_t11_auto.rds")
+magic_counts <- readRDS("./2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/3-v5.2_MAGIC_imputation/v5.2_afterMAGIC_t11_auto.rds")
 ```
 
 ```{r}

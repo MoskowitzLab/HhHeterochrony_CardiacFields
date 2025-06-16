@@ -24,9 +24,9 @@ library(scater)
 library(UCell)
 library(ggh4x)
 library(circlize)
-source("/project/imoskowitz/wiktor/3-code/export_to_ppt.R")
-source("/project/imoskowitz/wiktor/3-code/1-seurat/ggplot_themes.R")
-ppt_path <- "/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/v5.pptx"
+source("./export_to_ppt.R")
+source("./ggplot_themes.R")
+ppt_path <- "./2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/v5.pptx"
 ```
 
 
@@ -34,19 +34,19 @@ ppt_path <- "/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guze
 
 ## Read .gz files
 ```{r}
-Wt1 <- read_tsv(file ="/project/imoskowitz/shared/data_collaborators/AlexG/data/Hh_Mesp1_E8-25_wt1.tsv.gz", col_names = T)
-Wt2 <- read_tsv(file ="/project/imoskowitz/shared/data_collaborators/AlexG/data/Hh_Mesp1_E8-25_wt2.tsv.gz", col_names = T)
-Mut1 <- read_tsv(file ="/project/imoskowitz/shared/data_collaborators/AlexG/data/Hh_Mesp1_E8-25_mut1.tsv.gz", col_names = T)
-Mut2 <- read_tsv(file ="/project/imoskowitz/shared/data_collaborators/AlexG/data/Hh_Mesp1_E8-25_mut2.tsv.gz", col_names = T)
+Wt1 <- read_tsv(file ="./AlexG/data/Hh_Mesp1_E8-25_wt1.tsv.gz", col_names = T)
+Wt2 <- read_tsv(file ="./AlexG/data/Hh_Mesp1_E8-25_wt2.tsv.gz", col_names = T)
+Mut1 <- read_tsv(file ="./AlexG/data/Hh_Mesp1_E8-25_mut1.tsv.gz", col_names = T)
+Mut2 <- read_tsv(file ="./AlexG/data/Hh_Mesp1_E8-25_mut2.tsv.gz", col_names = T)
 ```
 
 ## Rename genes from ENS to symbol
 
 ``` {r Assign_Genes}
 
-genenames <- read.delim(file="/project/imoskowitz/shared/data_collaborators/AlexG/annotation/gencode.vM15.annotation_ID_type_names.txt", header=F, sep="\t")
+genenames <- read.delim(file="./AlexG/annotation/gencode.vM15.annotation_ID_type_names.txt", header=F, sep="\t")
 
-source("/project/imoskowitz/wiktor/3-code/1-seurat/matchIDtoSymbol.R")
+source("./3-code/1-seurat/matchIDtoSymbol.R")
 
 #Use custom function to change rownames from ENS -> Symbol
 Wt1 <- matchIDToSymbol2(Wt1, genenames = genenames)
@@ -58,15 +58,15 @@ Mut2 <- matchIDToSymbol2(Mut2, genenames = genenames)
 
 ## Convert matrix to seurat object
 ```{r}
-source("/project/imoskowitz/wiktor/3-code/1-seurat/MatrixToSeurat_rmDoublet.R") # Creates Seurat object and removes doublets
-source("/project/imoskowitz/shared/data_collaborators/AlexG/code/AddDoublets.R") 
+source("./3-code/1-seurat/MatrixToSeurat_rmDoublet.R") # Creates Seurat object and removes doublets
+source("./AlexG/code/AddDoublets.R") 
 ```
 
 ```{r}
-Wt1 <- MatrixToSeurat_rmDoublet(Wt1, "Wt1", "Wt","/project/imoskowitz/shared/data_collaborators/AlexG/data/Doublets/wt1_scrublet_output_table.tsv" )
-Wt2 <- MatrixToSeurat_rmDoublet(Wt2, "Wt2", "Wt","/project/imoskowitz/shared/data_collaborators/AlexG/data/Doublets/wt2_scrublet_output_table.tsv" )
-Mut1 <- MatrixToSeurat_rmDoublet(Mut1, "Mut1", "Mut","/project/imoskowitz/shared/data_collaborators/AlexG/data/Doublets/mut1_scrublet_output_table.tsv" )
-Mut2 <- MatrixToSeurat_rmDoublet(Mut2, "Mut2", "Mut","/project/imoskowitz/shared/data_collaborators/AlexG/data/Doublets/mut2_scrublet_output_table.tsv" )
+Wt1 <- MatrixToSeurat_rmDoublet(Wt1, "Wt1", "Wt","./AlexG/data/Doublets/wt1_scrublet_output_table.tsv" )
+Wt2 <- MatrixToSeurat_rmDoublet(Wt2, "Wt2", "Wt","./AlexG/data/Doublets/wt2_scrublet_output_table.tsv" )
+Mut1 <- MatrixToSeurat_rmDoublet(Mut1, "Mut1", "Mut","./AlexG/data/Doublets/mut1_scrublet_output_table.tsv" )
+Mut2 <- MatrixToSeurat_rmDoublet(Mut2, "Mut2", "Mut","./AlexG/data/Doublets/mut2_scrublet_output_table.tsv" )
 
 
 # saveRDS(Wt1, "Wt1_doubletRM.rds")
@@ -91,7 +91,7 @@ VlnPlot(merged_seurat, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"))
 ```{r}
 # Cell Cycle
 # Reference genes
-cc.genes <- read.table("/project/imoskowitz/rcanac/0-R_codes/2-Ressources/Cell-Cycle_genes_scRNA-Seq_MusMusculus.txt", sep="\t", header = T,fill = TRUE)
+cc.genes <- read.table("./0-R_codes/2-Ressources/Cell-Cycle_genes_scRNA-Seq_MusMusculus.txt", sep="\t", header = T,fill = TRUE)
 # segregate this list into markers of G2/M phase and markers of S phase
 s.genes <- cc.genes[cc.genes$CellCyclePhase == "S",1]
 g2m.genes <- cc.genes[cc.genes$CellCyclePhase == "G2/M",1]
@@ -184,7 +184,7 @@ export_to_ppt(p, ppt_path, width = 20, height = 15)
 ## Single R
 ```{r}
 # Mouse gastrulation ref dataset
-mouse_gastr_ext <- readRDS("/project/imoskowitz/wiktor/4-singlecell_reference_datasets/EmbryoSCE_extended_atlas.rds")
+mouse_gastr_ext <- readRDS("./4-singlecell_reference_datasets/EmbryoSCE_extended_atlas.rds")
 mouse_gastr_ext_e8.25 <- mouse_gastr_ext[ , mouse_gastr_ext$stage == "E8.25"]
 rm(mouse_gastr_ext)
 mouse_gastr_ext_e8.25 <- logNormCounts(mouse_gastr_ext_e8.25)
@@ -256,7 +256,7 @@ umap_plot <-DimPlot(harmonized, label=F) +
         axis.ticks = element_blank(),
         rect = element_rect(fill = 'transparent'))
 umap_plot
-ggsave("/project/imoskowitz/wiktor/2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/1-v5_seurat_filtering_subsetting_v5.1_v5.2/1-whole_dataset/UMAP_harmonized_whole_dataset.png", width = 6.4, height = 4, bg="transparent", dpi =1200)
+ggsave("./2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/1-v5_seurat_filtering_subsetting_v5.1_v5.2/1-whole_dataset/UMAP_harmonized_whole_dataset.png", width = 6.4, height = 4, bg="transparent", dpi =1200)
 export_to_ppt(umap_plot, ppt_path, width = 6.4, height = 4)
 ```
 
@@ -347,7 +347,7 @@ v5.1 <- subset(harmonized, cell_type %in% c("Pharyngeal mesoderm", "Mesenchyme",
 ```{r}
 # Cell Cycle
 # Reference genes
-cc.genes <- read.table("/project/imoskowitz/rcanac/0-R_codes/2-Ressources/Cell-Cycle_genes_scRNA-Seq_MusMusculus.txt", sep="\t", header = T,fill = TRUE)
+cc.genes <- read.table("./0-R_codes/2-Ressources/Cell-Cycle_genes_scRNA-Seq_MusMusculus.txt", sep="\t", header = T,fill = TRUE)
 # segregate this list into markers of G2/M phase and markers of S phase
 s.genes <- cc.genes[cc.genes$CellCyclePhase == "S",1]
 g2m.genes <- cc.genes[cc.genes$CellCyclePhase == "G2/M",1]
@@ -423,8 +423,7 @@ Idents(v5.1) <- "SCT_snn_res.0.5"
 
 ## Single R
 ```{r}
-# Mouse gastrulation ref dataset
-mouse_gastr_ext <- readRDS("/project/imoskowitz/wiktor/4-singlecell_reference_datasets/EmbryoSCE_extended_atlas.rds")
+# Mouse gastrulation ref dataset./project/imoskowitz/wiktor/4-singlecell_reference_datasets/EmbryoSCE_extended_atlas.rds")
 mouse_gastr_ext_e8.25 <- mouse_gastr_ext[ , mouse_gastr_ext$stage == "E8.25"]
 rm(mouse_gastr_ext)
 mouse_gastr_ext_e8.25 <- logNormCounts(mouse_gastr_ext_e8.25)
@@ -491,7 +490,7 @@ v5.2 <- subset(v5.1, SCT_snn_res.0.5 %in%c(6, 1, 4, 3, 0, 2))
 ```{r}
 # Cell Cycle
 # Reference genes
-cc.genes <- read.table("/project/imoskowitz/rcanac/0-R_codes/2-Ressources/Cell-Cycle_genes_scRNA-Seq_MusMusculus.txt", sep="\t", header = T,fill = TRUE)
+cc.genes <- read.table("./0-R_codes/2-Ressources/Cell-Cycle_genes_scRNA-Seq_MusMusculus.txt", sep="\t", header = T,fill = TRUE)
 # segregate this list into markers of G2/M phase and markers of S phase
 s.genes <- cc.genes[cc.genes$CellCyclePhase == "S",1]
 g2m.genes <- cc.genes[cc.genes$CellCyclePhase == "G2/M",1]
@@ -555,7 +554,7 @@ for (res in grep("SCT_snn_res", colnames(v5.2@meta.data), value=T)) {
 
 ```{r}
 # Mouse gastrulation ref dataset
-mouse_gastr_ext <- readRDS("/project/imoskowitz/wiktor/4-singlecell_reference_datasets/EmbryoSCE_extended_atlas.rds")
+mouse_gastr_ext <- readRDS("./4-singlecell_reference_datasets/EmbryoSCE_extended_atlas.rds")
 mouse_gastr_ext_e8.25 <- mouse_gastr_ext[ , mouse_gastr_ext$stage == "E8.25"]
 rm(mouse_gastr_ext)
 mouse_gastr_ext_e8.25 <- logNormCounts(mouse_gastr_ext_e8.25)
