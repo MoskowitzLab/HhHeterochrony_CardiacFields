@@ -7,4 +7,4 @@ This repo is associated with the analysis of the impact of Hedgehog signaling in
 
 ### Abstract
 <p align="center">
-<img src="https://github.com/MoskowitzLab/HhHeterochrony_CardiacFields/blob/85e195d473dbf59ecde179d1f433d6f72e4e2111/Graphical%20abstract.png" width="1000">
+<img src="https://github.com/MoskowitzLab/HhHeterochrony_CardiacFields/blob/26e9b7459dcd9b2af5749e310e7b716e58424ddd/Graphical%20abstract.png" width="1000">
