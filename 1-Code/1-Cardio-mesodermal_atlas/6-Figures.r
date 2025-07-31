@@ -262,10 +262,6 @@ UCell_score <- read.csv("./3-Merge3/UCell/UCell_score_Merge3_Krup_Tyser_Pijuan_h
 Merge3_Krup_Tyser_Pijuan_harmony2_res1.0[["Limited_Hh_list_UCell"]] <- UCell_score$UCell[match(rownames(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0@meta.data), UCell_score$X)]
 Idents(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0) <- Merge3_Krup_Tyser_Pijuan_harmony2_res1.0@meta.data$Annotation
 
-median_data <- Merge3_Krup_Tyser_Pijuan_harmony2_res1.0@meta.data %>%
-  group_by(Annotation) %>%
-  summarise(median_score = median(Limited_Hh_list_UCell))
-
 pdf(file = "./3-Merge3/Figures/Figure1_ViolinPlot_HhScore-perCellType.pdf", width = 11, height = 11)	   
 print(VlnPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, "Limited_Hh_list_UCell", pt.size = 0)+ 
 	    NoLegend() +
@@ -298,6 +294,9 @@ pdf(file = "./3-Merge3/Figures/Figure1_HhScore-UMAP.pdf", width = 10, height = 1
 print(FeaturePlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, features = "Limited_Hh_list_UCell", order = TRUE, pt.size = 0.6) + 
 	  scale_color_gradientn(limits = c(0, 0.2),colors = c("#E4E4E4","#C71717"), na.value = "#F6F0F0")
 )
+print(FeaturePlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, features = "Limited_Hh_list_UCell", order = TRUE, pt.size = 0.6) + 
+	  scale_color_gradientn(limits = c(0, 0.2),colors = c("#A8C9D8","#f64f59","#C71717"), na.value = "#E4E4E4")
+)
 dev.off()	
 
 ### Hh score UMAP per timepoint
@@ -319,6 +318,25 @@ pdf(file = "./3-Merge3/Figures/Figure1_HhScore_ScorePerTimePoint.pdf", width = 1
       ggtitle(paste(Day, "-", "Limited_Hh_list_UCell"))
     print(p)
   }
+dev.off()
+
+### Hh score violin plot per timepoint
+Idents(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0) <- Merge3_Krup_Tyser_Pijuan_harmony2_res1.0@meta.data$TimeStampMerged
+Merge3_Krup_Tyser_Pijuan_harmony2_res1.0@active.ident <- factor(
+  Idents(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0),
+  levels = c("E6.0","E6.5","E6.75","E7.0","E7.25","E7.5","E7.75","E8.0","E8.25","E8.5")
+)
+
+pdf(file = "./3-Merge3/Figures/Figure1_ViolinPlot_HhScore-perTimePoint.pdf", width = 9.9, height = 3)	   
+print(VlnPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, "Limited_Hh_list_UCell", pt.size = 0)+ 
+	    NoLegend() +
+		scale_fill_manual(values = setNames(rep("#C71717", length(levels(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0))), levels(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0))) +
+		labs(title = NULL,
+			     x = NULL,              
+                 y = "Hedgehog Score (AU)") + 
+		theme(axis.title.x = element_blank(),
+		axis.title.y = element_text(size = 16),
+        axis.text.x = element_text(size = 16, angle = 90, vjust = 0.5, hjust = 1)))
 dev.off()
 
 ### Hh score UMAP per timepoint (compacted version)
@@ -357,6 +375,24 @@ pdf(file = "./3-Merge3/Figures/Figure1_HhScore_ScorePerTimePoint_Compacted.pdf",
   }
 dev.off()
 
+### Hh score violin plot per timepoint (compacted version)
+Idents(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0) <- Merge3_Krup_Tyser_Pijuan_harmony2_res1.0@meta.data$TimePointCompacted
+Merge3_Krup_Tyser_Pijuan_harmony2_res1.0@active.ident <- factor(
+  Idents(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0),
+  levels = c("Early", "Switch", "Late")
+)
+
+pdf(file = "./3-Merge3/Figures/Figure1_ViolinPlot_HhScore-perCompactedTimepoint.pdf", width = 9.9, height = 3)	   
+print(VlnPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, "Limited_Hh_list_UCell", pt.size = 0)+ 
+	    NoLegend() +
+		scale_fill_manual(values = c("Early" = "#C71717", "Switch" = "#C71717", "Late" = "#C71717")) +
+		labs(title = NULL,
+			     x = NULL,              
+                 y = "Hedgehog Score (AU)") + 
+		theme(axis.title.x = element_blank(),
+		axis.title.y = element_text(size = 16),
+        axis.text.x = element_text(size = 16)))
+dev.off()
 
 ##############################################################################################################################################
 ############################################                       Figure 2                       ############################################
