@@ -77,6 +77,7 @@ print(DimPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, reduction = "umap", labe
 print(DimPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, reduction = "umap", label = F, pt.size = 0.7, group.by = "Annotation", raster = FALSE, cols = AnnotationColors))
 print(DimPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, reduction = "umap", label = T, pt.size = 0.7, group.by = "Annotation", raster = FALSE, cols = AnnotationColors) + NoLegend())
 print(DimPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, reduction = "umap", label = F, pt.size = 0.7, group.by = "Annotation", raster = FALSE, cols = AnnotationColors) + NoLegend())
+print(DimPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, reduction = "umap", label = F, pt.size = 0.7, group.by = "Dataset", raster = FALSE, cols = c("Krup.2023" = "#1E88E5","Pijuan.2019" = "#FFC107","Tyser.2021" = "#D81B60")) + NoLegend())
 dev.off()
 
 ### Heatmap annotated UMAP
@@ -281,6 +282,17 @@ print(VlnPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, "Limited_Hh_list_UCell",
 		theme(axis.title.x = element_blank(),
 		axis.title.y = element_text(size = 16),
         axis.text.x = element_text(size = 16)))
+print(VlnPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, "Limited_Hh_list_UCell", pt.size = 0)+ 
+	    NoLegend() +
+		stat_summary(fun = median, fun.min = median, fun.max = median,
+               geom = "crossbar", width = 0.2, color = "white", size = 0.2) +
+		scale_fill_manual(values = AnnotationColors) +
+		labs(title = NULL,
+			     x = NULL,              
+                 y = "Hedgehog Score (AU)") + 
+		theme(axis.title.x = element_blank(),
+		axis.title.y = element_text(size = 16),
+        axis.text.x = element_text(size = 16)))
 dev.off()
 
 # Calculate percentage of cells with Limited_Hh_list_UCell > 0 per Annotation group
@@ -392,6 +404,17 @@ print(VlnPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, "Limited_Hh_list_UCell",
 		theme(axis.title.x = element_blank(),
 		axis.title.y = element_text(size = 16),
         axis.text.x = element_text(size = 16)))
+print(VlnPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, "Limited_Hh_list_UCell", pt.size = 0)+ 
+	    NoLegend() +
+		scale_fill_manual(values = c("Early" = "#C71717", "Switch" = "#C71717", "Late" = "#C71717")) +
+		stat_summary(fun = median, fun.min = median, fun.max = median,
+               geom = "crossbar", width = 0.2, color = "white", size = 0.2) +
+		labs(title = NULL,
+			     x = NULL,              
+                 y = "Hedgehog Score (AU)") + 
+		theme(axis.title.x = element_blank(),
+		axis.title.y = element_text(size = 16),
+        axis.text.x = element_text(size = 16)))		
 dev.off()
 
 ##############################################################################################################################################
@@ -823,6 +846,79 @@ print(ggplot(plot_data, aes(x = x, y = y)) +
   ) +
   scale_y_continuous(limits = c(0, 0.06))
 )
+dev.off()
+
+TimeStampMergedColors = c("#5e4fa2","#3288bd","#66c2a5","#abdda4","#e6f598","#fee08b","#fdae61","#f46d43","#d53e4f","#9e0142")
+names(TimeStampMergedColors) = c("E6.0","E6.5","E6.75","E7.0","E7.25","E7.5","E7.75","E8.0","E8.25","E8.5")
+
+pdf(file = "./3-Merge3/Figures/Figure2_LimitedHhScore_FHF_TimeColor.pdf", width = 8, height = 8)
+print(ggplot(meta_sort, aes(x = dptval, y = UCell, color = TimeStampMerged)) +
+  geom_point(size = 4, alpha = 1) +  # Scatter plot points
+  geom_smooth(method = "gam", aes(x = dptval, y = UCell), color = "black", size = 1.2, se = TRUE) +  # Smooth curve
+  scale_color_manual(values = TimeStampMergedColors) +
+  labs(
+    title = "Limited Hh score - FHF trajectory",
+    x = "Pseudotime",
+    y = "Hedgehog Score (AU)"
+  ) +
+  theme(
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    plot.title = element_text(size = 18, hjust = 0.5, face = "bold"),
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    legend.position = "right"
+  ) +
+  scale_x_continuous(
+    breaks = c(min(meta_sort$dptval), max(meta_sort$dptval)),
+    labels = c("Early", "Late"))
+)
+
+Breaks <- quantile(meta_sort$dptval, probs = seq(0, 1, length.out = 6), na.rm = TRUE)
+meta_sort$pseudotime_bin <- cut(meta_sort$dptval, breaks = Breaks, include.lowest = TRUE)
+
+#meta_sort$pseudotime_bin <- cut_number(meta_sort$dptval, n = 5)
+print(ggplot(meta_sort, aes(x = TimeStampMerged, y = UCell, fill = TimeStampMerged)) +
+  geom_violin(scale = "width", trim = FALSE) +
+  facet_wrap(~ pseudotime_bin, nrow = 1) +
+  scale_fill_manual(values = TimeStampMergedColors) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  ylim(0, max(meta_sort$UCell, na.rm = TRUE))
+)
+bins <- unique(sort(as.numeric(unlist(strsplit(gsub("\\[|\\]|\\(|\\)", "", levels(meta_sort$pseudotime_bin)), ",")))))
+print(ggplot(meta_sort, aes(x = dptval, y = UCell, color = TimeStampMerged)) +
+  geom_point(size = 4, alpha = 1) +  # Scatter plot points
+  geom_smooth(method = "gam", aes(x = dptval, y = UCell), color = "black", size = 1.2, se = TRUE) +  # Smooth curve
+  scale_color_manual(values = TimeStampMergedColors) +
+  labs(
+    title = "Limited Hh score - FHF trajectory",
+    x = "Pseudotime",
+    y = "Hedgehog Score (AU)"
+  ) +
+  theme(
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    plot.title = element_text(size = 18, hjust = 0.5, face = "bold"),
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    legend.position = "right"
+  ) +
+  scale_x_continuous(
+    breaks = c(min(meta_sort$dptval), max(meta_sort$dptval)),
+    labels = c("Early", "Late")
+  ) + 
+	#geom_vline(xintercept = bins, linetype = "dashed", color = "gray40")
+  geom_vline(xintercept = Breaks[-c(1, length(Breaks))], linetype = "dashed", color = "gray40") +
+	
+)
+
 dev.off()
 
 

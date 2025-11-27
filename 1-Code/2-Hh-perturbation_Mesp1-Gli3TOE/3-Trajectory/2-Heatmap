@@ -1,0 +1,279 @@
+```{r, message=FALSE, warning=FALSE}
+library(Seurat)
+library(tidyverse)
+library(slingshot)
+library(ComplexHeatmap)
+library(viridis)
+library(patchwork)
+library(ggpubr)
+library(circlize)
+library(scales)
+```
+
+```{r}
+magic_counts <- readRDS("./2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/V5/3-v5.2_MAGIC_imputation/v5.2_afterMAGIC_t11_auto.rds")
+```
+
+```{r}
+genes <- list(
+  Hh = c("Ptch1", "Ptch2" ,"Hhip", "Foxf1", "Foxf2", "Gli1", "Gli2"),
+  BMP = c("Msx1", "Bambi", "Smad7", "Id1", "Id2", "Id3", "Id4", "Bmper"), 
+  CP = c("Isl1", "Osr1", "Fgf8", "Fgf10","Tbx1", "Arg1","Hoxb1" ,"Hand1","Mab21l2"),
+  CM = c("Gata4", "Tbx5", "Nkx2-5", "Myl7" ,"Myh6", "Tnnc1", "Tnnt2", "Ttn")
+  )
+genes_vector <- unlist(genes) %>% setNames(NULL)
+genes_df <- stack(genes)
+rownames(genes_df) <- genes_df$values
+genes_df <- genes_df %>% select(ind)
+```
+
+```{r}
+jcf_psts <- subset(psts, lineage == "JCF lineage") %>% arrange(pseudotime)
+shf_psts <- subset(psts, lineage == "SHF lineage") %>% arrange(pseudotime)
+```
+
+# JCF lineage
+
+```{r}
+magic_counts_subset <- magic_counts$result %>% select(all_of(genes_vector))
+magic_counts_subset_JCF <- magic_counts_subset[jcf_psts$cells, ]
+magic_counts_subset_JCF <- scale(magic_counts_subset_JCF, center = T, scale = T) %>% t()
+```
+
+```{r}
+# Colors
+pst_color_scale <- colorRamp2(c(0, 0.5, 1), hcl_palette = "Viridis")
+cluster_colors <- c(`JCF` = "#A5D171", `SHF`= "#8FA2F2" ,`ECM` = "#FF8C00" ,`CM` = "#FF4500") 
+gene_groups_colors <- c(Hh = "#4793AF", BMP = "#FFC470", CP = "#DD5746", CM = "#8B322C")
+# counts_colors = colorRamp2(c(-2,0,2), colors = c('#9baecb', '#faf5f4', '#d39794'))
+counts_colors <- colorRamp2(c(-1, 0, 2), hcl_palette = "Cividis")
+# Row annotation
+row_annotation <- rowAnnotation(Genes=anno_block(gp= gpar(fill=gene_groups_colors, col="white"),
+                                labels = unique(genes_df$ind)))
+
+# top annotation of complex heatmap
+top_annotation <- HeatmapAnnotation(df=jcf_psts %>% select(pseudotime),
+                                    Genotype = anno_block(gp= gpar(fill= NULL, col="white"), labels = c("WT", "Gli3T OE")),
+                                    col= list(clusterAnn2= cluster_colors, pseudotime = pst_color_scale),
+                                    show_annotation_name = F,
+                                    annotation_legend_param = list(
+    pseudotime = list(
+      at = c(0, 1),  # Specify the breaks
+      labels = c("JCF", "CM")  # Specify the corresponding labels
+    ))
+)
+
+
+```
+
+```{r, fig.width=6.5, fig.height=6}
+
+htmp <- Heatmap(magic_counts_subset_JCF, 
+          col = counts_colors,
+          cluster_rows= F, cluster_columns = F,
+          show_column_names = F,
+          top_annotation = top_annotation,
+          left_annotation = row_annotation,
+          column_split = jcf_psts$Genotype, 
+          row_split = genes_df,
+          column_title = NULL,
+          row_title = NULL,
+          heatmap_legend_param = list(title="Relative expression", legend_direction="horizontal", title_position='topcenter'))
+draw_htmp <- draw(htmp, heatmap_legend_side="bottom", annotation_legend_side="right", legend_grouping="original")
+png('plots/Heatmap_pseudotime_selectedgenes_JCF_lineage.png', width=6, height = 6, res = 1200, units="in")
+draw_htmp
+dev.off()
+```
+
+# SHF lineage
+
+```{r}
+magic_counts_subset <- magic_counts$result %>% select(all_of(genes_vector))
+magic_counts_subset_SHF <- magic_counts_subset[shf_psts$cells, ]
+magic_counts_subset_SHF <- scale(magic_counts_subset_SHF, center = T, scale = T) %>% t()
+```
+
+```{r}
+# Colors
+pst_color_scale <- colorRamp2(c(0, 0.5, 1), hcl_palette = "Viridis")
+cluster_colors <- c(`JCF` = "#A5D171", `SHF`= "#8FA2F2" ,`ECM` = "#FF8C00" ,`CM` = "#FF4500") 
+gene_groups_colors <- c(Hh = "#4793AF", BMP = "#FFC470", CP = "#DD5746", CM = "#8B322C")
+# counts_colors = colorRamp2(c(-2,0,2), colors = c('#9baecb', '#faf5f4', '#d39794'))
+counts_colors <- colorRamp2(c(-1, 0, 2), hcl_palette = "Cividis")
+# Row annotation
+row_annotation <- rowAnnotation(Genes=anno_block(gp= gpar(fill=gene_groups_colors, col="white"),
+                                labels = unique(genes_df$ind)))
+
+# top annotation of complex heatmap
+top_annotation <- HeatmapAnnotation(df=shf_psts %>% select(pseudotime),
+                                    Genotype = anno_block(gp= gpar(fill= NULL, col="white"), labels = c("WT", "Gli3T OE")),
+                                    col= list(clusterAnn2= cluster_colors, pseudotime = pst_color_scale),
+                                    show_annotation_name = F,
+                                    annotation_legend_param = list(
+    pseudotime = list(
+      at = c(0, 1),  # Specify the breaks
+      labels = c("SHF", "CM")  # Specify the corresponding labels
+    ))
+)
+
+
+```
+
+```{r, fig.width=6.5, fig.height=6}
+htmp <- Heatmap(magic_counts_subset_SHF, 
+          col = counts_colors,
+          cluster_rows= F, cluster_columns = F,
+          show_column_names = F,
+          top_annotation = top_annotation,
+          left_annotation = row_annotation,
+          column_split = shf_psts$Genotype, 
+          row_split = genes_df,
+          column_title = NULL,
+          row_title = NULL,
+          heatmap_legend_param = list(title="Relative expression", legend_direction="horizontal", title_position='topcenter'))
+draw_htmp <- draw(htmp, heatmap_legend_side="bottom", annotation_legend_side="right", legend_grouping="original")
+png('plots/Heatmap_pseudotime_selectedgenes_SHF_lineage.png', width=6, height = 6, res = 1200, units="in")
+draw_htmp
+dev.off()
+```
+
+# Downsampled
+
+## JCF
+
+```{r}
+# Define the number of WT cells
+wt_count_jcf <- psts %>% filter(Genotype == "Wt", lineage == "JCF lineage") %>% nrow()
+mut_count_jcf <- psts %>% filter(Genotype == "Mut", lineage == 'JCF lineage') %>% nrow()
+
+wt_count_shf <- psts %>% filter(Genotype == "Wt", lineage == "SHF lineage") %>% nrow()
+mut_count_shf <- psts %>% filter(Genotype == "Mut", lineage == 'SHF lineage') %>% nrow()
+
+# Filter the 'Mut' samples and downsample to match 'Wt' count
+mut_sample_jcf <- psts %>%
+  filter(Genotype == "Mut", lineage == 'JCF lineage') %>%
+  sample_n(wt_count_jcf)
+
+# Filter the 'Wt' samples
+wt_sample_jcf <- psts %>%
+  filter(Genotype == "Wt", lineage == 'JCF lineage')
+
+# Filter the 'Mut' samples and downsample to match 'Wt' count
+mut_sample_shf <- psts %>%
+  filter(Genotype == "Mut", lineage == 'SHF lineage') %>%
+  sample_n(wt_count_shf)
+
+# Filter the 'Wt' samples
+wt_sample_shf <- psts %>%
+  filter(Genotype == "Wt", lineage == 'SHF lineage')
+
+# Downsample mutant cells to match WT cell count
+downsampled_psts <- bind_rows(mut_sample_jcf, wt_sample_jcf, mut_sample_shf, wt_sample_shf)
+table(downsampled_psts$Genotype, downsampled_psts$lineage)
+```
+
+```{r}
+jcf_psts_dnsampled <- subset(downsampled_psts, lineage == "JCF lineage") %>% arrange(pseudotime)
+```
+
+```{r}
+magic_counts_subset <- magic_counts$result %>% select(all_of(genes_vector))
+magic_counts_subset_JCF_dnsampled <- magic_counts_subset[jcf_psts_dnsampled$cells, ]
+magic_counts_subset_JCF_dnsampled <- scale(magic_counts_subset_JCF_dnsampled, center = T, scale = T) %>% t()
+```
+
+```{r}
+# Colors
+pst_color_scale <- colorRamp2(c(0, 0.5, 1), hcl_palette = "Viridis")
+cluster_colors <- c(`JCF` = "#A5D171", `SHF`= "#8FA2F2" ,`ECM` = "#FF8C00" ,`CM` = "#FF4500") 
+gene_groups_colors <- c(Hh = "#4793AF", BMP = "#FFC470", CP = "#DD5746", CM = "#8B322C")
+counts_colors <- colorRamp2(c(-1, 0, 2), hcl_palette = "Cividis")
+# Row annotation
+row_annotation <- rowAnnotation(Genes=anno_block(gp= gpar(fill=gene_groups_colors, col="white"),
+                                labels = unique(genes_df$ind)))
+
+# top annotation of complex heatmap
+top_annotation <- HeatmapAnnotation(df=jcf_psts_dnsampled %>% select(pseudotime),
+                                    Genotype = anno_block(gp= gpar(fill= NULL, col="white"), labels = c("WT", "Gli3T OE")),
+                                    col= list(pseudotime = pst_color_scale),
+                                    show_annotation_name = F,
+                                    annotation_legend_param = list(
+    pseudotime = list(
+      at = c(0, 1),  # Specify the breaks
+      labels = c("JCF", "CM")  # Specify the corresponding labels
+    ))
+)
+
+
+```
+
+```{r}
+htmp <- Heatmap(magic_counts_subset_JCF_dnsampled, 
+          col = counts_colors,
+          cluster_rows= F, cluster_columns = F,
+          show_column_names = F,
+          top_annotation = top_annotation,
+          left_annotation = row_annotation,
+          column_split = jcf_psts_dnsampled$Genotype, 
+          row_split = genes_df,
+          column_title = NULL,
+          row_title = NULL,
+          heatmap_legend_param = list(title="Relative expression", legend_direction="horizontal", title_position='topcenter'))
+draw_htmp <- draw(htmp, heatmap_legend_side="bottom", annotation_legend_side="right", legend_grouping="original")
+png('plots/Heatmap_pseudotime_selectedgenes_JCF_lineage_downsampled.png', width=6, height = 6, res = 1200, units="in")
+draw_htmp
+dev.off()
+```
+
+## SHF
+
+```{r}
+shf_psts_dnsampled <- subset(downsampled_psts, lineage == "SHF lineage") %>% arrange(pseudotime)
+```
+
+```{r}
+magic_counts_subset <- magic_counts$result %>% select(all_of(genes_vector))
+magic_counts_subset_SHF_dnsampled <- magic_counts_subset[shf_psts_dnsampled$cells, ]
+magic_counts_subset_SHF_dnsampled <- scale(magic_counts_subset_SHF_dnsampled, center = T, scale = T) %>% t()
+```
+
+```{r}
+# Colors
+pst_color_scale <- colorRamp2(c(0, 0.5, 1), hcl_palette = "Viridis")
+cluster_colors <- c(`SHF` = "#A5D171", `SHF`= "#8FA2F2" ,`ECM` = "#FF8C00" ,`CM` = "#FF4500") 
+gene_groups_colors <- c(Hh = "#4793AF", BMP = "#FFC470", CP = "#DD5746", CM = "#8B322C")
+counts_colors <- colorRamp2(c(-1, 0, 2), hcl_palette = "Cividis")
+# Row annotation
+row_annotation <- rowAnnotation(Genes=anno_block(gp= gpar(fill=gene_groups_colors, col="white"),
+                                labels = unique(genes_df$ind)))
+
+# top annotation of complex heatmap
+top_annotation <- HeatmapAnnotation(df=shf_psts_dnsampled %>% select(pseudotime),
+                                    Genotype = anno_block(gp= gpar(fill= NULL, col="white"), labels = c("WT", "Gli3T OE")),
+                                    col= list(clusterAnn2= cluster_colors, pseudotime = pst_color_scale),
+                                    show_annotation_name = F,
+                                    annotation_legend_param = list(
+    pseudotime = list(
+      at = c(0, 1),  # Specify the breaks
+      labels = c("SHF", "CM")  # Specify the corresponding labels
+    ))
+)
+```
+
+```{r}
+htmp <- Heatmap(magic_counts_subset_SHF_dnsampled, 
+          col = counts_colors,
+          cluster_rows= F, cluster_columns = F,
+          show_column_names = F,
+          top_annotation = top_annotation,
+          left_annotation = row_annotation,
+          column_split = shf_psts_dnsampled$Genotype, 
+          row_split = genes_df,
+          column_title = NULL,
+          row_title = NULL,
+          heatmap_legend_param = list(title="Relative expression", legend_direction="horizontal", title_position='topcenter'))
+draw_htmp <- draw(htmp, heatmap_legend_side="bottom", annotation_legend_side="right", legend_grouping="original")
+png('plots/Heatmap_pseudotime_selectedgenes_SHF_lineage_downsampled.png', width=6, height = 6, res = 1200, units="in")
+draw_htmp
+dev.off()
+```

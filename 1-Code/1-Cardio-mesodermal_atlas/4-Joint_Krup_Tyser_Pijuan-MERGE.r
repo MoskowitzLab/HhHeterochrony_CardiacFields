@@ -199,7 +199,7 @@ Merge_Krup_Tyser_Pijuan_harmony2_res1.0 <- FindClusters(Merge_Krup_Tyser_Pijuan_
 
 pdf(file="./1-Merge1/UMAP_Merge_Krup_Tyser_Pijuan_harmony2_res1.0.pdf", width=9, height=10)
 print(DimPlot(Merge_Krup_Tyser_Pijuan_harmony2_res1.0, reduction = "umap", label = T, raster = FALSE))
-print(DimPlot(Merge_Krup_Tyser_Pijuan_harmony2_res1.0, reduction = "umap", label = T,  group.by = "Dataset", raster = FALSE))
+print(DimPlot(Merge_Krup_Tyser_Pijuan_harmony2_res1.0, reduction = "umap", label = T,  group.by = "Dataset", cols = c("Krup.2023"="#1E88E5","Pijuan.2019"="#FFC107","Tyser.2021"="#D81B60"), raster = FALSE))
 print(DimPlot(Merge_Krup_Tyser_Pijuan_harmony2_res1.0, reduction = "umap", label = T,  group.by = "Batch", raster = FALSE))
 print(DimPlot(Merge_Krup_Tyser_Pijuan_harmony2_res1.0, reduction = "umap", label = T,  group.by = "orig.ident", raster = FALSE)+ NoLegend())
 print(DimPlot(Merge_Krup_Tyser_Pijuan_harmony2_res1.0, reduction = "umap", label = T,  group.by = "Timepoint", raster = FALSE))

@@ -34,17 +34,17 @@ ppt_path <- "./2-projects/2-Mesp1creGli3T_scRNAseq_Guzetta/v5.pptx"
 
 ## Read .gz files
 ```{r}
-Wt1 <- read_tsv(file ="./AlexG/data/Hh_Mesp1_E8-25_wt1.tsv.gz", col_names = T)
-Wt2 <- read_tsv(file ="./AlexG/data/Hh_Mesp1_E8-25_wt2.tsv.gz", col_names = T)
-Mut1 <- read_tsv(file ="./AlexG/data/Hh_Mesp1_E8-25_mut1.tsv.gz", col_names = T)
-Mut2 <- read_tsv(file ="./AlexG/data/Hh_Mesp1_E8-25_mut2.tsv.gz", col_names = T)
+Wt1 <- read_tsv(file ="./data/Hh_Mesp1_E8-25_wt1.tsv.gz", col_names = T)
+Wt2 <- read_tsv(file ="./data/Hh_Mesp1_E8-25_wt2.tsv.gz", col_names = T)
+Mut1 <- read_tsv(file ="./data/Hh_Mesp1_E8-25_mut1.tsv.gz", col_names = T)
+Mut2 <- read_tsv(file ="./data/Hh_Mesp1_E8-25_mut2.tsv.gz", col_names = T)
 ```
 
 ## Rename genes from ENS to symbol
 
 ``` {r Assign_Genes}
 
-genenames <- read.delim(file="./AlexG/annotation/gencode.vM15.annotation_ID_type_names.txt", header=F, sep="\t")
+genenames <- read.delim(file="./annotation/gencode.vM15.annotation_ID_type_names.txt", header=F, sep="\t")
 
 source("./3-code/1-seurat/matchIDtoSymbol.R")
 
@@ -59,14 +59,14 @@ Mut2 <- matchIDToSymbol2(Mut2, genenames = genenames)
 ## Convert matrix to seurat object
 ```{r}
 source("./3-code/1-seurat/MatrixToSeurat_rmDoublet.R") # Creates Seurat object and removes doublets
-source("./AlexG/code/AddDoublets.R") 
+source("./code/AddDoublets.R") 
 ```
 
 ```{r}
-Wt1 <- MatrixToSeurat_rmDoublet(Wt1, "Wt1", "Wt","./AlexG/data/Doublets/wt1_scrublet_output_table.tsv" )
-Wt2 <- MatrixToSeurat_rmDoublet(Wt2, "Wt2", "Wt","./AlexG/data/Doublets/wt2_scrublet_output_table.tsv" )
-Mut1 <- MatrixToSeurat_rmDoublet(Mut1, "Mut1", "Mut","./AlexG/data/Doublets/mut1_scrublet_output_table.tsv" )
-Mut2 <- MatrixToSeurat_rmDoublet(Mut2, "Mut2", "Mut","./AlexG/data/Doublets/mut2_scrublet_output_table.tsv" )
+Wt1 <- MatrixToSeurat_rmDoublet(Wt1, "Wt1", "Wt","./data/Doublets/wt1_scrublet_output_table.tsv" )
+Wt2 <- MatrixToSeurat_rmDoublet(Wt2, "Wt2", "Wt","./data/Doublets/wt2_scrublet_output_table.tsv" )
+Mut1 <- MatrixToSeurat_rmDoublet(Mut1, "Mut1", "Mut","./data/Doublets/mut1_scrublet_output_table.tsv" )
+Mut2 <- MatrixToSeurat_rmDoublet(Mut2, "Mut2", "Mut","./data/Doublets/mut2_scrublet_output_table.tsv" )
 
 
 # saveRDS(Wt1, "Wt1_doubletRM.rds")
