@@ -528,7 +528,10 @@ E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2@meta.data <- E875_SmoNull_M
 	 seurat_clusters %in% c(7,4) ~ "pSHF",
 	 seurat_clusters %in% 18 ~ "aSHF",
 	 seurat_clusters %in% 20 ~ "Head muscle progenitor",
-	 seurat_clusters %in% c(6,8,15,24,34) ~ "CM",
+	 seurat_clusters %in% 15 ~ "CM1",
+	 seurat_clusters %in% 6 ~ "CM2",
+	 seurat_clusters %in% c(8,34) ~ "CM3",
+	 seurat_clusters %in% 24 ~ "CM4",
 	 seurat_clusters %in% 10 ~ "Differentiating CM",
 	 seurat_clusters %in% 5 ~ "Epicardium",
 	 seurat_clusters %in% c(23,31) ~ "Intermediate mesoderm",
@@ -537,8 +540,8 @@ E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2@meta.data <- E875_SmoNull_M
   ))
 
 ## Color codes ##
-AnnotationNullColors = c('#a6b2ff','#d62728','#ff7f0e','#2ca02c','#1f77b4','#d7aa9e','#9467bd','#17becf','#e377c2','#8c564b','#8eba96')
-names(AnnotationNullColors) = c("Limb/Paraxial mesoderm","CM","Differentiating CM","aSHF","pSHF","Epicardium","Neural crest","Intermediate mesoderm","JCF-like","Mesenchyme","Head muscle progenitor")
+AnnotationNullColors = c('#a6b2ff','#A12F3C','#D62728','#6B3750','#000000','#ff7f0e','#2ca02c','#1f77b4','#d7aa9e','#9467bd','#17becf','#e377c2','#8c564b','#8eba96')
+names(AnnotationNullColors) = c("Limb/Paraxial mesoderm","CM1","CM2","CM3","CM4","Differentiating CM","aSHF","pSHF","Epicardium","Neural crest","Intermediate mesoderm","JCF-like","Mesenchyme","Head muscle progenitor")
 
 ### Heatmap annotated UMAP
 AnnoGenes <- c(
@@ -557,7 +560,7 @@ AnnoGenes <- c(
 
 E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2@meta.data$Annotation <- factor(
   E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2@meta.data$Annotation,
-  levels = c("Limb/Paraxial mesoderm","CM","Differentiating CM","aSHF","pSHF","JCF-like","Mesenchyme","Head muscle progenitor","Neural crest","Epicardium","Intermediate mesoderm")
+levels = c("Limb/Paraxial mesoderm","CM1","CM2","CM3","CM4","Differentiating CM","aSHF","pSHF","JCF-like","Mesenchyme","Head muscle progenitor","Neural crest","Epicardium","Intermediate mesoderm")
 )
 
 E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2 <- PrepSCTFindMarkers(E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2)
@@ -646,6 +649,56 @@ dev.off()
 saveRDS(E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2, file = "./E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2.RDS")
 #E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2 <- readRDS(file = "./E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2.RDS")
 
+##################################
+# Barplot celltype per condition #
+##################################
+meta <- as.data.frame(E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2@meta.data)
+
+plot_data <- meta %>%
+  group_by(Condition, Annotation) %>%
+  summarise(CellCount = n(), .groups = "drop") %>%
+  group_by(Condition) %>%
+  mutate(Percent = 100 * CellCount / sum(CellCount)) %>%
+  ungroup()
+
+plot_data2 <- meta %>%
+  group_by(Sample, Annotation) %>%
+  summarise(CellCount = n(), .groups = "drop") %>%
+  group_by(Sample) %>%
+  mutate(Percent = 100 * CellCount / sum(CellCount)) %>%
+  ungroup()
+plot_data2 <- plot_data2 %>%
+  mutate(Sample = factor(Sample, levels = c("Sample1", "Sample3", "Sample5", "Sample2", "Sample4", "Sample6")))
+  
+pdf(file = "./4-Subset1/Barplot_CelltypePerCond-E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2.pdf", width = 6, height = 6)
+print(
+ggplot(plot_data, aes(x = Condition, y = Percent, fill = Annotation)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = AnnotationNullColors) +
+  labs(
+    title = "Composition of Annotation per Condition",
+    y = "Percentage",
+    x = "Condition",
+    fill = "Annotation"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+)
+print(
+ggplot(plot_data2, aes(x = Sample, y = Percent, fill = Annotation)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = AnnotationNullColors) +
+  labs(
+    title = "Composition of Annotation per Sample",
+    y = "Percentage",
+    x = "Sample",
+    fill = "Annotation"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+)
+dev.off()
+
 ################################################################
 ## Cell composition analysis with Propeller (Speckle package) ## !! R/4.3.1 !!
 ################################################################
@@ -717,7 +770,7 @@ dev.off()
 E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2 <- readRDS(file = "./E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2.RDS")
 
 ### Subset for slingshot ###
-E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM <- subset(E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2,  subset =  Annotation %in% c("aSHF","Differentiating CM","CM"), invert = FALSE)
+E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM <- subset(E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_v201_res2,  subset =  Annotation %in% c("aSHF","Differentiating CM","CM1","CM2","CM3","CM4"), invert = FALSE)
 
 saveRDS(E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM, file = "./4-Subset1/4-Slingshot/1-Subset_aSHF/E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM.RDS")
 #E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM <- readRDS(file = "./4-Subset1/4-Slingshot/1-Subset_aSHF/E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM.RDS")
@@ -726,27 +779,6 @@ pdf(file="./4-Subset1/4-Slingshot/1-Subset_aSHF/UMAP-Color_E875_SmoNull_Merge_Rm
 print(DimPlot(E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM, pt.size = 0.7, raster=FALSE, reduction = "umap", group.by = "Annotation", label = T, cols = AnnotationNullColors))
 print(DimPlot(E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM, pt.size = 0.7, raster=FALSE, reduction = "umap", group.by = "Annotation", label = T, cols = AnnotationNullColors) + NoLegend())
 print(DimPlot(E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM, pt.size = 0.7, raster=FALSE, reduction = "umap", group.by = "seurat_clusters", label = T) + NoLegend())
-dev.off()
-
-# Figure
-E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM@meta.data <- E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM@meta.data %>%
-  mutate(AnnotationCM = case_when(
-     seurat_clusters %in% 15 ~ "Outflow tract CM",
-     seurat_clusters %in% 6 ~ "Ventricular CM", 
-	 seurat_clusters %in% c(8,34) ~ "Atrial CM",
-	 seurat_clusters %in% 24 ~ "Venous pole",
-	 seurat_clusters %in% 18 ~ "aSHF",
-	 seurat_clusters %in% 10 ~ "Differentiating CM",
-	TRUE ~  seurat_clusters
-  ))
-
-## Color codes ##
-AnnotationCMColors = c('#ff7f0e','#2ca02c','#EB531B','#D62728','#A12F3C','#6B3750')
-names(AnnotationCMColors) = c("Differentiating CM","aSHF","Outflow tract CM","Ventricular CM","Atrial CM","Venous pole")
-
-pdf(file="./4-Subset1/4-Slingshot/1-Subset_aSHF/UMAP-Figure_E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM.pdf", width=9, height=10)
-print(DimPlot(E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM, pt.size = 0.7, raster=FALSE, reduction = "umap", group.by = "AnnotationCM", label = T, cols = AnnotationCMColors))
-print(DimPlot(E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM, pt.size = 0.7, raster=FALSE, reduction = "umap", group.by = "AnnotationCM", label = T, cols = AnnotationCMColors) + NoLegend())
 dev.off()
 
 ### Heatmap annotated UMAP
@@ -759,9 +791,9 @@ AnnoGenes <- c(
 "Wnt2","Hcn4","Shox2" # Venous pole
 )
 
-E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM@meta.data$AnnotationCM <- factor(
-  E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM@meta.data$AnnotationCM,
-  levels = c("aSHF","Differentiating CM","Outflow tract CM","Ventricular CM","Atrial CM","Venous pole")
+E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM@meta.data$Annotation <- factor(
+  E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM@meta.data$Annotation,
+  levels = c("aSHF","Differentiating CM","CM1","CM2","CM3","CM4")
 )
 
 E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM <- PrepSCTFindMarkers(E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM)
@@ -815,66 +847,67 @@ ht <- Heatmap(
 draw(ht, heatmap_legend_side = "left")
 dev.off()
 
-##START c18 END c6 HARMONY
-sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30 <- as.SingleCellExperiment(E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM)
-sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30 <- slingshot(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30, clusterLabels = E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM$seurat_clusters, reducedDim = reducedDim(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30, "HARMONY")[,1:30], approx_points = 200, start.clus="18", end.clus="6", extend = 'n', stretch = 0)
+## Reverse START aCM1 (OFT) c15 -> SHF c18 END / HARMONY space
+sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30 <- as.SingleCellExperiment(E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM)
+sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30 <- slingshot(sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30, clusterLabels = E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM$seurat_clusters, reducedDim = reducedDim(sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30, "HARMONY")[,1:30], approx_points = 200, start.clus="15", end.clus="18", extend = 'n', stretch = 0)
 
-saveRDS(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30, file = "./4-Subset1/4-Slingshot/1-Subset_aSHF/sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30-extdN-Stretch0.RDS")
-#sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30 <- readRDS(file = "./4-Subset1/4-Slingshot/1-Subset_aSHF/sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30-extdN-Stretch0.RDS")
+saveRDS(sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30, file = "./4-Subset1/Slingshot/sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30-extdN-Stretch0.RDS")
+#sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30 <- readRDS(file = "./4-Subset1/Slingshot/sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30-extdN-Stretch0.RDS")
 
 #Check the identified lineages and Curves
-SlingshotDataSet(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30)
+SlingshotDataSet(sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30)
 
-colnames(colData(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30))
+colnames(colData(sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30))
 
 	# Plotting pseudotimes
 colors <- colorRampPalette(c("#0D0887FF", "#CC4678FF", "#F0F921FF"))(100)
-pdf(file="./4-Subset1/4-Slingshot/1-Subset_aSHF/sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30_One-functionMethod_Pseudotimes-extdN-Stretch0nolinesFIGURE.pdf", width=12, height=12)
+pdf(file="./4-Subset1/Slingshot/sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30_One-functionMethod_Pseudotimes-extdN-Stretch0nolinesFIGURE.pdf", width=12, height=12)
 for(u in seq(24,26)){
-plotcol <- colors[cut(as.matrix(colData(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30)[u]), breaks=100)]
+plotcol <- colors[cut(as.matrix(colData(sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30)[u]), breaks=100)]
 plotcol[is.na(plotcol)] <- "#D9D9D9"
-plot(reducedDims(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30)$UMAP, col = plotcol, pch=16, asp = 1, main=paste0(colnames(colData(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30)[u])))
-#lines(SlingshotDataSet(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30), lwd=2, col='black')
+plot(reducedDims(sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30)$UMAP, col = plotcol, pch=16, asp = 1, main=paste0(colnames(colData(sce_SmoNull_subset.aSHF.CM_startc18endc15_HARMONY30)[u])))
+#lines(SlingshotDataSet(sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30), lwd=2, col='black')
 }
 dev.off()
-# lineage 3 is the good one
+# lineage 3 is the good one (reversed)
 
 #==# Selected cells only for pseudotime #==#
-GoodPseudoCells <- rownames(na.omit(colData(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30)["slingPseudotime_3"]))
+GoodPseudoCells <- rownames(na.omit(colData(sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30)["slingPseudotime_3"]))
 
-E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2[["CellName"]] <- colnames(E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2)
-aSHFTraj_Slingshot_SelectedCells <- subset(x = E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2, subset = CellName %in% GoodPseudoCells, invert=FALSE)
+E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset[["CellName"]] <- colnames(E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset)
+aSHFTraj_Slingshot_SelectedCells <- subset(x = E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset, subset = CellName %in% GoodPseudoCells, invert=FALSE)
 
-meta <- na.omit(colData(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30)[,c("seurat_clusters", "Condition", "Annotation", "slingPseudotime_3")])
-colnames(meta) <- c("seurat_clusters", "Condition", "Annotation", "dptval")
+meta <- na.omit(colData(sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30)[,c("seurat_clusters", "Condition", "Annotation", "slingPseudotime_3")])
+meta$dptval <- max(meta$slingPseudotime_3) - meta$slingPseudotime_3
+colnames(meta) <- c("seurat_clusters", "Condition", "Annotation", "dptval_rev", "dptval")
 aSHFTraj_Slingshot_SelectedCells[["SlingshotPseudotime"]] <- meta$dptval[match(rownames(aSHFTraj_Slingshot_SelectedCells@meta.data), rownames(meta))]
 
 ### Save seurat object with only selected cells ###
-saveRDS(aSHFTraj_Slingshot_SelectedCells, file = "./4-Subset1/4-Slingshot/1-Subset_aSHF/aSHFTraj_Slingshot_SelectedCells.RDS")
-#aSHFTraj_Slingshot_SelectedCells <- readRDS(file = "./4-Subset1/4-Slingshot/1-Subset_aSHF/aSHFTraj_Slingshot_SelectedCells.RDS")
+saveRDS(aSHFTraj_Slingshot_SelectedCells, file = "./4-Subset1/Slingshot/aSHFTraj_Slingshot_SelectedCells.RDS")
+#aSHFTraj_Slingshot_SelectedCells <- readRDS(file = "./4-Subset1/Slingshot/aSHFTraj_Slingshot_SelectedCells.RDS")
 ######
 
-pdf(file = "./4-Subset1/4-Slingshot/1-Subset_aSHF/TrajectoryViz_aSHF.pdf", width = 10, height = 10)
+pdf(file = "./4-Subset1/Slingshot/TrajectoryViz_aSHF.pdf", width = 10, height = 10)
   good2 <- data.frame(cells = colnames(aSHFTraj_Slingshot_SelectedCells), Pseudotime = aSHFTraj_Slingshot_SelectedCells@meta.data$SlingshotPseudotime)
-  all2 <- data.frame(cells = rownames(E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2@meta.data), Pseudotime = NA)
+  all2 <- data.frame(cells = rownames(E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset@meta.data), Pseudotime = NA)
   rest2 <- all2[!(all2$cells %in% good2$cells),]
   full2 <- rbind(good2,rest2)
-temp <- E875_SmoNull_Merge_RmDB_subset1_harmonySeqBatch_res2
+temp <- E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset
 temp@meta.data$Pseudo <- full2$Pseudotime[match(rownames(temp@meta.data), full2$cells)]
 print(FeaturePlot(temp, features = "Pseudo", reduction = "umap", order = TRUE, pt.size = 0.8) + scale_color_gradientn(colors = c("#0D0887FF","#CC4678FF","#F0F921FF"), na.value = "#E4E4E4") + labs(color = "Pseudotime"))
 dev.off()
 
-## Differential Progression ##
+# Differential Progression
 library(patchwork)
 
-psts <- slingPseudotime(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30) %>%
+psts <- slingPseudotime(sce_SmoNull_subset.aSHF.CM_startc18endc15_HARMONY30) %>%
   as.data.frame() %>%
   mutate(cells = rownames(.),
          conditions = E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM@meta.data$Condition,
 		 annotations = E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM@meta.data$Annotation) %>%
   pivot_longer(starts_with("curve"), values_to = "pseudotime", names_to = "lineages")
 
-pdf(file = "./4-Subset1/4-Slingshot/1-Subset_aSHF/DiffProgression_visualisation.pdf", width = 10, height = 10)
+pdf(file = "./4-Subset1/Slingshot/DiffProgression_visualisation.pdf", width = 10, height = 10)
 print(ggplot(psts, aes(x = pseudotime, fill = conditions)) +
   geom_density(alpha = .5) +
   scale_fill_brewer(type = "qual") +
@@ -899,7 +932,7 @@ p_density <- ggplot(psts[psts$lineages == "curve3",], aes(x = pseudotime, fill =
 p_anno <- ggplot(psts[psts$lineages == "curve3",], aes(x = pseudotime, y = 1, fill = annotations)) +
   geom_tile() +
   scale_fill_manual(values = c(
-    "CM" = "#d62728",
+    "CM1" = "#A12F3C",
     "Differentiating CM" = "#ff7f0e",
     "aSHF" = "#2ca02c"
   )) +
@@ -915,22 +948,23 @@ module load ggc
 module load python/anaconda-2022.05
 module load R/4.3.1
 
+setwd(dir = "/project/imoskowitz/rcanac/14-SmoNull_snRNA/3-Analysis_v2.0.0")
   library(Seurat)
   library(ggplot2)
   library(slingshot)
   library(condiments)
 
-E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM <- readRDS(file = "./4-Subset1/4-Slingshot/1-Subset_aSHF/E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM.RDS")
-sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30 <- readRDS(file = "./4-Subset1/4-Slingshot/1-Subset_aSHF/sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30-extdN-Stretch0.RDS")
+E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM <- readRDS(file = "./4-Subset1/Slingshot/E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM.RDS")
+sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30 <- readRDS(file = "./4-Subset1/Slingshot/sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30-extdN-Stretch0.RDS")
   
-prog_res <- progressionTest(sce_SmoNull_subset.aSHF.CM_startc18endc6_HARMONY30, conditions = E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM@meta.data$Condition, global = FALSE, lineages = TRUE)
+prog_res <- progressionTest(sce_SmoNull_subset.aSHF.CM_startc15endc18_HARMONY30, conditions = E875_SmoNull_Merge_RmDB_harmonySeqBatch_subset.aSHF.CM@meta.data$Condition, global = FALSE, lineages = TRUE)
 knitr::kable(prog_res)
 
-#|lineage | statistic| p.value|
-#|:-------|---------:|-------:|
-#|1       | 0.3106866|       0|
-#|2       | 0.2277300|       0|
-#|3       | 0.1303265|       0|
+#|lineage | statistic|   p.value|
+#|:-------|---------:|---------:|
+#|1       | 0.1742240| 0.0000000|
+#|2       | 0.0744103| 0.0054892|
+#|3       | 0.2081269| 0.0000000|
 
 
 ######################################
