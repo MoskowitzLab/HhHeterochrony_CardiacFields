@@ -36,6 +36,7 @@
   library(RSpectra)
   library(stringr)
   library(BBmisc)
+  library(patchwork)
 
 Merge3_Krup_Tyser_Pijuan_harmony2_res1.0 <- readRDS(file = "./3-Merge3/Merge3_Krup_Tyser_Pijuan_harmony2_res1.0.RDS")
 Merge3_Krup_Tyser_Pijuan_harmony2_res1.0 <- PrepSCTFindMarkers(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0)
@@ -83,11 +84,11 @@ dev.off()
 ### Heatmap annotated UMAP
 AnnoGenes <- c(
 			"Nanog","Eomes","T",# Primitive streak
-			"Mesp1","Mesp2","Lefty2","Tdgf1",# Nascent mesoderm
-			"Evx1",# Mixed mesoderm
+			"Mesp2","Lefty2","Tdgf1","Mesp1",# Nascent mesoderm
+			"Phlda2","Msx1","Msx2","Ifitm1",# Mixed mesoderm
 			"Tcf15",# Paraxial/Pharyngeal mesoderm
 			"Cdx1","Cdx2","Cdx4","Bmp4",# ExE mesoderm
-			"Isl1","Tbx1","Fgf10",# aSHF/Pharyngeal mesoderm
+			"Isl1","Fgf10","Tbx1",# aSHF/Pharyngeal mesoderm
 			"Osr1","Aldh1a2","Arg1",# pSHF/Pharyngeal mesoderm
 			"Igf2","Krt8","Krt18","Pmp22","Ahnak",# Mesenchyme
 			"Hand1","Foxf1","Mab21l2",# JCF/Mesenchyme
@@ -2247,9 +2248,160 @@ dev.off()
 
 
 
+##############################################################################################################################################
+####################################                       Additional Figure Panels                       ####################################
+##############################################################################################################################################
 
+### Dotplot marker genes per cell-type per Dataset
+dataset <- Merge3_Krup_Tyser_Pijuan_harmony2_res1.0
+dataset$Dataset_Annotation <- paste(dataset$Dataset,
+                                    dataset$Annotation,
+                                    sep = "_")
 
+AnnoGenes <- c(
+			"Nanog","Eomes","T",# Primitive streak
+			"Mesp2","Lefty2","Tdgf1","Mesp1",# Nascent mesoderm
+			"Phlda2","Msx1","Msx2","Ifitm1",# Mixed mesoderm
+			"Tcf15",# Paraxial/Pharyngeal mesoderm
+			"Cdx1","Cdx2","Cdx4","Bmp4",# ExE mesoderm
+			"Isl1","Fgf10","Tbx1",# aSHF/Pharyngeal mesoderm
+			"Osr1","Aldh1a2","Arg1",# pSHF/Pharyngeal mesoderm
+			"Igf2","Krt8","Krt18","Pmp22","Ahnak",# Mesenchyme
+			"Hand1","Foxf1","Mab21l2",# JCF/Mesenchyme
+			"Ttn","Tnnt2","Myl7","Acta2"# Cardiomyocytes
+)
 
+# ── 0. Raw data ────────────────────────────────────────────────────────────────
+dp <- DotPlot(dataset, features = AnnoGenes, scale = TRUE, group.by = "Dataset_Annotation",
+              col.max = 3, col.min = -3, assay = "SCT", dot.scale = 5)
+df <- dp$data
+df$Dataset    <- sub("_.*", "", df$id)
+df$Annotation <- sub("^[^_]+_", "", df$id)
+
+# ── 1. Label remapping ─────────────────────────────────────────────────────────
+annotation_label_map <- c(
+  "CMs"                          = "CM",
+  "Differentiating CMs"          = "Differentiating CM",
+  "JCF/Mesenchyme"               = "JCF",
+  "Paraxial/Pharyngeal mesoderm" = "Paraxial mesoderm",
+  "aSHF/Pharyngeal mesoderm"     = "aSHF",
+  "pSHF/Pharyngeal mesoderm"     = "pSHF"
+)
+
+df$Annotation <- ifelse(df$Annotation %in% names(annotation_label_map),
+                        annotation_label_map[df$Annotation],
+                        df$Annotation)
+
+# ── 2. Factor levels ───────────────────────────────────────────────────────────
+annotation_groups_new <- rev(c(
+  "Primitive streak", "Nascent mesoderm", "Mixed mesoderm",
+  "Paraxial mesoderm", "ExE mesoderm",
+  "aSHF", "pSHF",
+  "Mesenchyme", "JCF", "Differentiating CM", "CM"
+))
+
+df$features.plot <- factor(df$features.plot, levels = AnnoGenes)
+df$Dataset       <- factor(df$Dataset, levels = c("Krup.2023", "Pijuan.2019", "Tyser.2021"))
+df$Annotation    <- factor(df$Annotation, levels = annotation_groups_new)
+
+# ── 3. Cell counts from metadata ──────────────────────────────────────────────
+cellCount  <- table(dataset@meta.data$Annotation, dataset@meta.data$Dataset)
+cellCount2 <- addmargins(cellCount, FUN = list("Total" = sum))
+
+cell_counts <- as.data.frame(cellCount2)
+colnames(cell_counts) <- c("Annotation", "Dataset", "n_cells")
+cell_counts <- cell_counts[cell_counts$Annotation != "Total" & cell_counts$Dataset != "Total", ]
+
+# Add annotation totals and compute percentage
+annot_totals <- aggregate(n_cells ~ Annotation, data = cell_counts, FUN = sum)
+colnames(annot_totals) <- c("Annotation", "annot_total")
+cell_counts <- merge(cell_counts, annot_totals, by = "Annotation")
+cell_counts$pct <- round(100 * cell_counts$n_cells / cell_counts$annot_total, 1)
+
+cell_counts$Annotation <- as.character(cell_counts$Annotation)
+cell_counts$Annotation <- ifelse(cell_counts$Annotation %in% names(annotation_label_map),
+                                  annotation_label_map[cell_counts$Annotation],
+                                  cell_counts$Annotation)
+cell_counts$Annotation <- factor(cell_counts$Annotation, levels = annotation_groups_new)
+cell_counts$Dataset    <- factor(cell_counts$Dataset, levels = c("Krup.2023", "Pijuan.2019", "Tyser.2021"))
+
+# ── 4a. Cell count panel ──────────────────────────────────────────────────────
+p_counts <- ggplot(cell_counts, aes(x = 1, y = Dataset,
+                                     label = formatC(n_cells, format = "d", big.mark = ","))) +
+  geom_text(size = 3.5, hjust = 0) +
+  facet_grid(Annotation ~ ., switch = "y") +
+  theme_bw() +
+  theme(
+    axis.text.x      = element_text(color = "black", size = 11),
+    axis.ticks       = element_blank(),
+    axis.text.y      = element_blank(),
+    strip.text       = element_blank(),
+    strip.background = element_blank(),
+    panel.spacing.y  = unit(0, "pt"),
+    panel.grid       = element_blank(),
+    panel.border     = element_blank(),
+    legend.position  = "none",
+    plot.margin      = margin(0, 10, 0, 0)
+  ) +
+  scale_x_continuous(breaks = 1, labels = "Cell count", limits = c(1, 1.5), expand = c(0, 0)) +
+  xlab("") + ylab("")
+
+# ── 4b. Percentage panel ──────────────────────────────────────────────────────
+p_pct <- ggplot(cell_counts, aes(x = 1, y = Dataset,
+                                  label = paste0(pct, "%"))) +
+  geom_text(size = 3.5, hjust = 0) +
+  facet_grid(Annotation ~ ., switch = "y") +
+  theme_bw() +
+  theme(
+    axis.text.x      = element_text(color = "black", size = 11),
+    axis.ticks       = element_blank(),
+    axis.text.y      = element_blank(),
+    strip.text       = element_blank(),
+    strip.background = element_blank(),
+    panel.spacing.y  = unit(0, "pt"),
+    panel.grid       = element_blank(),
+    panel.border     = element_blank(),
+    legend.position  = "none",
+    plot.margin      = margin(0, 10, 0, 0)
+  ) +
+  scale_x_continuous(breaks = 1, labels = "Proportion of cluster", limits = c(1, 1.5), expand = c(0, 0)) +
+  xlab("") + ylab("")
+
+# ── 5. Build gtables ───────────────────────────────────────────────────────────
+g       <- ggplot_gtable(ggplot_build(p_main))
+g_counts <- ggplot_gtable(ggplot_build(p_counts))
+g_pct    <- ggplot_gtable(ggplot_build(p_pct))
+
+# ── 6. Color strip backgrounds ────────────────────────────────────────────────
+for (nm in g$layout$name[grepl("strip-l", g$layout$name)]) {
+  idx   <- which(g$layout$name == nm)
+  grob  <- g$grobs[[idx]]
+  label <- grob$grobs[[1]]$children[[2]]$children[[1]]$label
+  if (!is.null(label) && label %in% names(AnnotationColors)) {
+    g$grobs[[idx]]$grobs[[1]]$children[[1]]$gp$fill <- AnnotationColors[label]
+  }
+}
+
+# ── 7. Align panel heights, set widths, cbind all three ───────────────────────
+panels_main   <- g$layout[grepl("^panel", g$layout$name), ]
+panels_counts <- g_counts$layout[grepl("^panel", g_counts$layout$name), ]
+panels_pct    <- g_pct$layout[grepl("^panel", g_pct$layout$name), ]
+
+for (i in seq_len(nrow(panels_main))) {
+  g_counts$heights[panels_counts$t[i]] <- g$heights[panels_main$t[i]]
+  g_pct$heights[panels_pct$t[i]]       <- g$heights[panels_main$t[i]]
+}
+
+for (col in unique(panels_counts$l)) g_counts$widths[col] <- unit(2, "cm")
+for (col in unique(panels_pct$l))    g_pct$widths[col]    <- unit(2, "cm")
+
+combined_g <- gridExtra::gtable_cbind(g, g_counts, g_pct)
+
+# ── 10. Save ───────────────────────────────────────────────────────────────────
+pdf(file = "./2-DotPlot_SelectedAtlasMarkers_PerDataset_figure.v3.pdf",
+    width = 14, height = 15)
+grid::grid.draw(combined_g)
+dev.off()
 
 
 

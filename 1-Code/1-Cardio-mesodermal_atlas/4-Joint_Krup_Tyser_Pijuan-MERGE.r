@@ -859,6 +859,42 @@ pdf(file = "./3-Merge3/DotPlot_Merge3_Krup_Tyser_Pijuan_harmony2_res1.0.markers.
 print(DotPlot(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, features = unique(top15$gene), col.max = 3, col.min = -2, cols = c("grey","red"), assay = "SCT", dot.scale = 6) +coord_flip() + RotatedAxis() + xlab('') + ylab('') + NoLegend())
 dev.off()
 
+## Mixed mesoderm-specific analysis
+	# Find global markers
+dataset <- Merge3_Krup_Tyser_Pijuan_harmony2_res1.0
+Idents(dataset) <- dataset@meta.data$Annotation
+dataset.markers <- FindAllMarkers(dataset, only.pos = TRUE, min.pct = 0.5, logfc.threshold = 0.5, recorrect_umi = FALSE)
+write.csv(dataset.markers, file = "./MixedMesoderm_Markers/4-AnnotationCluster_all-markers_min0.5logfc0.5.csv")
+
+	# Global marker heatmap
+dataset.markers %>%
+    group_by(cluster) %>%
+    dplyr::filter(avg_log2FC > 1) %>%
+    slice_head(n = 15) %>%
+    ungroup() -> top15
+	
+pdf(file = "./MixedMesoderm_Markers/4-AnnotationCluster_all-markers_min0.5logfc0.5.pdf", width = 15, height = 40)
+print(DotPlot(dataset, features = unique(top15$gene), col.max = 3, col.min = -2, cols = c("grey","red"), assay = "SCT", dot.scale = 5) +coord_flip() + RotatedAxis() + xlab('') + ylab('') + NoLegend())
+dev.off()
+
+	# Find pairwise markers
+markers <- FindMarkers(
+  object = dataset,
+  ident.1 = "Mixed mesoderm",
+  ident.2 = "Mesenchyme", # test with all individual cell type
+  assay = "SCT",          
+  slot = "data",          
+  test.use = "wilcox",    
+  logfc.threshold = 0.6,  
+  min.pct = 0.5,         
+  min.diff.pct = 0.2,     
+  min.cells.group = 10,   
+  only.pos = TRUE,        # focus on positive markers of "Mixed mesoderm"
+  max.cells.per.ident = 2000
+)
+write.csv(markers, file = "./MixedMesoderm_Markers/FindMarkers_min0.5logfc0.6_MixedMesoderm-vs-Mesenchyme.csv")
+
+
 ######################################
 ## UCell function Hh score # R/4.3.1 #
 ######################################
@@ -876,7 +912,286 @@ markers <- list(Limited_Hh_list = c("Ptch1","Hhip","Gli1"))
 SeuratObj <- AddModuleScore_UCell(Merge3_Krup_Tyser_Pijuan_harmony2_res1.0, markers, assay = "SCT")
 SeuratObj <- SmoothKNN(SeuratObj, signature.names = paste0(names(markers),"_UCell"), reduction="harmony", k=10)
 
-UCell_score <- data.frame(UCell = SeuratObj@meta.data$Limited_FHF_list4.2_UCell_kNN, row.names = rownames(SeuratObj@meta.data))
-UCell_score2 <- as.data.frame(SeuratObj@meta.data[,paste0(names(markers),"_UCell")])
-write.csv(UCell_score, file = "./3-Merge3/UCell/Limited_Hh_list_UCell_kNN_Merge3_Krup_Tyser_Pijuan_harmony2_res1.0_AfterPrepSCTFindMarkers.csv")
+UCell_score <- data.frame(UCell = SeuratObj@meta.data$Limited_Hh_list_UCell_kNN, row.names = rownames(SeuratObj@meta.data))
+write.csv(UCell_score, file = "./3-Merge3/UCell/UCell_score_Merge3_Krup_Tyser_Pijuan_harmony2_res1.0_AfterPrepSCTFindMarkers.csv")
 
+##########################################################################
+## Early/Late mixed mesoderm analysis and comparison with Lescroart.2014 #
+##########################################################################
+dataset <- Merge3_Krup_Tyser_Pijuan_harmony2_res1.0
+
+## Early/Late mixed mesoderm analysis
+
+Subset_MixedMonly <- subset(x = dataset, subset = Annotation %in% "Mixed mesoderm", invert=FALSE)
+Subset_MixedMonly_SubTime <- subset(x = Subset_MixedMonly, subset = TimeStampMerged %in% c("E6.5","E6.75","E7.25","E7.5"), invert=FALSE)
+
+library(DESeq2)
+set.seed(123)
+
+	# Assign cells randomly to one of 3 groups
+Subset_MixedMonly_SubTime$pseudoGroup <- sample(1:3, nrow(Subset_MixedMonly_SubTime@meta.data), replace = T)
+
+Subset_MixedMonly_SubTime@meta.data <- Subset_MixedMonly_SubTime@meta.data %>%
+  mutate(Condition = case_when(
+	TimeStampMerged %in% "E6.5" ~ "Early",
+	TimeStampMerged %in% "E6.75" ~ "Early",
+	TimeStampMerged %in% "E7.25" ~ "Late",
+	TimeStampMerged %in% "E7.5" ~ "Late",
+  ))
+saveRDS(Subset_MixedMonly_SubTime, file = "./Pseudobulk_comparisons/5g-Subset_MixedMonly_SubTime.RDS")
+
+	# Aggregate expression - make sure to always include pseudoGroup (or whatever group) in the group by.
+pseudo_Subset_MixedMonly_SubTime_counts <- AggregateExpression(Subset_MixedMonly_SubTime, assay="RNA", slot="counts",return.seurat = F, group.by = c("Condition", "pseudoGroup"))
+pseudo_Subset_MixedMonly_SubTime_counts <- as.matrix(pseudo_Subset_MixedMonly_SubTime_counts$RNA)
+
+	# Remove mitochondrial and ribosomal genes
+keep <- grep("^mt-|^Rpl|^Rps|^Mrpl*", rownames(pseudo_Subset_MixedMonly_SubTime_counts), invert = T)
+pseudo_Subset_MixedMonly_SubTime_counts_mt_rb_removed <- pseudo_Subset_MixedMonly_SubTime_counts[keep, ]
+
+dim(pseudo_Subset_MixedMonly_SubTime_counts) ; dim(pseudo_Subset_MixedMonly_SubTime_counts_mt_rb_removed)
+
+saveRDS(pseudo_Subset_MixedMonly_SubTime_counts, file = "./Pseudobulk_comparisons/5g-pseudo_Subset_MixedMonly_SubTime_counts.RDS")
+
+	# Create meta data for deseq
+metad <- data.frame(samples = colnames(pseudo_Subset_MixedMonly_SubTime_counts)) %>%
+  mutate(group = str_split_fixed(colnames(pseudo_Subset_MixedMonly_SubTime_counts), "_",2)[,2] %>% as.factor(),
+		 condition = str_split_fixed(colnames(pseudo_Subset_MixedMonly_SubTime_counts), "_",2)[,1] %>% as.factor())
+ rownames(metad) <- metad$samples
+
+metad$condition <- relevel(metad$condition, ref="Early")
+
+	# remove lowely expressed genes with edgeR
+library(edgeR)
+
+mm <- model.matrix(~ group + condition, data=metad)
+keep <- filterByExpr(pseudo_Subset_MixedMonly_SubTime_counts_mt_rb_removed, design = mm)
+pseudo_Subset_MixedMonly_SubTime_counts_filtered <- pseudo_Subset_MixedMonly_SubTime_counts_mt_rb_removed[keep, ]
+dim(pseudo_Subset_MixedMonly_SubTime_counts_mt_rb_removed)
+dim(pseudo_Subset_MixedMonly_SubTime_counts_filtered)
+
+dds <- DESeqDataSetFromMatrix(pseudo_Subset_MixedMonly_SubTime_counts_filtered, metad, design = ~ group + condition)
+dds <- DESeq(dds)
+
+	#saves
+saveRDS(dds, file = "./Pseudobulk_comparisons/5g-MixedMesoderm_EarlyLate_dds.RDS")
+
+	# PCA
+library(FactoMineR)
+library(factoextra)
+
+vsd <- vst(dds)
+pca_result <- PCA(t(assay(vsd)), graph = FALSE)
+pca_data <- data.frame(samples = rownames(pca_result$ind$coord), pca_result$ind$coord)
+pca_data <- left_join(pca_data, metad, by = "samples")
+
+	# Plotting the PCA results
+pdf(file="./Pseudobulk_comparisons/5g-MixedMesoderm_EarlyLate_PCA.pdf", width=9, height=10)
+pc1_var <- round(pca_result$eig[1, 2], 1)
+pc2_var <- round(pca_result$eig[2, 2], 1)
+ggplot(pca_data, aes(x = Dim.1, y = Dim.2, color = condition, shape = group)) +
+  geom_point(size = 3) +
+  labs(
+    x = paste0("PC1 (", pc1_var, "%)"),
+    y = paste0("PC2 (", pc2_var, "%)")
+  )
+dev.off()
+  
+	# DESeq2 results 
+levels(dds$condition)
+contrasts <- list(MixedMeso = c("Late", "Early"))
+
+res_deseq<- list()
+for (celltype in names(contrasts)) {
+  contrast = contrasts[[celltype]]
+  res = results(dds, contrast = c("condition",contrast[1], contrast[2]), alpha=0.05)
+  res_deseq[[celltype]] <- res
+}
+write.csv(res_deseq, file = "./Pseudobulk_comparisons/5g-MixedMesoderm_EarlyLate_DESeq_results.csv")
+
+	# Volcano plot
+source("./gg_volcano4.R")
+
+pdf(file="./Pseudobulk_comparisons/5g-MixedMesoderm_EarlyLate_Volcano.pdf", width=5, height=5)
+gg_volcano4(as.data.frame(res_deseq$MixedMeso),
+			abs_lfc= 1 , 
+			p.cutoff = 0.05,
+			up.color="#C2202C",
+			down.color="#0070C0",
+			unSig.color='grey88', 
+			dotSize=0.5, 
+			alpha=1,    
+			theme_style = "minimal",
+			scale_axes = TRUE, # TRUE for auto-scaling, FALSE for manual
+			xlim = NULL,  
+			ylim = NULL, 
+			count_position = "bottom",
+			use_asinh = TRUE, # TRUE to use asinh transformation on y-axis
+			n_labels_up = 10,
+			n_labels_down = 10,
+			label_TF_only = FALSE,
+			align_labels = FALSE
+			)
+gg_volcano4(as.data.frame(res_deseq$MixedMeso),
+			abs_lfc= 1 , 
+			p.cutoff = 0.05,
+			up.color="#C2202C",
+			down.color="#0070C0",
+			unSig.color='grey88', 
+			dotSize=0.5, 
+			alpha=1,    
+			theme_style = "minimal",
+			scale_axes = TRUE, # TRUE for auto-scaling, FALSE for manual
+			xlim = NULL,
+			ylim = NULL,
+			count_position = "bottom",
+			use_asinh = TRUE, # TRUE to use asinh transformation on y-axis
+			n_labels_up = 10,
+			n_labels_down = 10,
+			label_TF_only = TRUE,
+			align_labels = TRUE
+			)
+dev.off()
+
+	# GO term analysis
+library(clusterProfiler)
+library(org.Mm.eg.db)
+
+	# Load gene annotation
+eg <- read_csv("./Mus_musculus.gene_info_edit.csv")
+eg$GeneID <- as.character(eg$GeneID)
+
+run_go_local <- function(test.vector, univr_vector, ont = "BP") {
+  test.ids  <- subset(eg, Symbol %in% test.vector  | splt_syn %in% test.vector)$GeneID  %>% unique()
+  univr.ids <- subset(eg, Symbol %in% univr_vector | splt_syn %in% univr_vector)$GeneID %>% unique()
+
+  goPATH <- enrichGO(
+    gene          = test.ids,
+    OrgDb         = "org.Mm.eg.db",
+    universe      = univr.ids,
+    ont           = ont,
+    pAdjustMethod = "BH",
+    pvalueCutoff  = 0.01,
+    qvalueCutoff  = 0.05
+  )
+  goPATH <- setReadable(goPATH, OrgDb = "org.Mm.eg.db")
+  return(goPATH)
+}
+
+	# Extract gene lists from DESeq2 results
+res_df <- read.csv("./Pseudobulk_comparisons/5g-MixedMesoderm_EarlyLate_DESeq_results.csv") %>%
+  rename(gene_id = X)
+
+universe_genes <- res_df$gene_id
+up_genes       <- subset(res_df, MixedMeso.padj < 0.05 & MixedMeso.log2FoldChange >  1)$gene_id
+down_genes     <- subset(res_df, MixedMeso.padj < 0.05 & MixedMeso.log2FoldChange < -1)$gene_id
+
+stopifnot(length(up_genes) > 5, length(down_genes) > 5)
+
+	# Run GO
+go_up   <- run_go_local(up_genes,   universe_genes)
+go_down <- run_go_local(down_genes, universe_genes)
+
+	# Plots
+out_dir <- "./Pseudobulk_comparisons/"
+
+plot_go <- function(go_obj, title, color) {
+  dotplot(go_obj, showCategory = 20) +
+    ggtitle(title) +
+    scale_color_gradient(low = color, high = "grey80") +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.grid.major.x = element_blank(),
+      panel.grid.major.y = element_line(color = "grey85", linewidth = 0.3, linetype = "dashed"),
+      panel.grid.minor   = element_blank(),
+      legend.text        = element_text(size = 8),
+      legend.title       = element_text(size = 8),
+      axis.line.x        = element_line(color = "black"),
+      axis.line.y        = element_line(color = "black"),
+      axis.ticks         = element_line(color = "black"),
+      plot.margin        = margin(5, 5, 5, 80)
+    ) +
+    scale_size(range = c(3, 10)) +
+    scale_x_continuous(expand = expansion(mult = c(0.5, 0.15)))
+}
+
+pdf(file.path(out_dir, "5g-MixedMesoderm_EarlyLate_GO.pdf"), width = 9, height = 8)
+print(plot_go(go_up,   "Upregulated GO BP\nLate vs Early",   "#C2202C"))
+print(plot_go(go_down, "Downregulated GO BP\nLate vs Early", "#0070C0"))
+dev.off()
+
+	# Save tables
+write.csv(as.data.frame(go_up),   file.path(out_dir, "5g-MixedMesoderm_EarlyLate_GO_up.csv"))
+write.csv(as.data.frame(go_down), file.path(out_dir, "5g-MixedMesoderm_EarlyLate_GO_down.csv"))
+
+## Comparison to Lescroart.2014 analysis
+library(ggrepel)
+
+	# List abs(FC) > 1.5 + Genes on plot Fig5k-m
+E6.5_genes <- c("Aplnr","Mixl1","Frzb","Meis2","Fn1","Mesp1","Dll3","Cdh11","Gata6","Dlc1",
+           "Fgf3","Sp5","Pcdh7","Adam19","Hoxb1","Gas1","Lhx1","Peg3","Gna14","Pdgfra",
+           "Snai1","Wnt5a","Epha4","T","Ifitm1","Tbx3","Klhl6","Bmp7","Cyp26a1","Nin",
+           "Cxcr4","Flk1","Nfatc1","Gata4","Prkd1","Rab8b","Rnd3","Cdh2","Ptprj","Zfx",
+           "Spred1","Fgf10","Ccnd2","Vangl1","Mesp2","Tbx6","Pdlim5","Otx1","Aph1b","Smad1",
+           "L1cam","Chst2","Man1c1","Evx1","Mmp14","Irx5","Tgfb1","Cdh4","Sall3","Prtg",
+           "Usp3","Asb4","Arf1","Wwp1","Cdx1","Cdc42ep4","Sema5a","Birc6","Whsc1l1","Vcan",
+           "Odz4","Wnt3","Lefty2","Cbln1","Anpep","Rimbp2","Efna3","Vldlr","Slit3","Id1",
+           "Rftn1","Cachd1","Atp11c","Hand1","Dlk1","Pafah1b1","Zfp423","Msgn1","Apln","Efnb3",
+           "Hs3st3b1","Six2","Rreb1","Wnt2b","Dact1","Fstl1","Rasgrp3","Gpr50","Braf","Adcyap1r1",
+           "Tiparp","Dock11","Itga5","Agtrap","Nrp2","Dclk1","Phlda2","Ppic","Psmd9","Wls",
+           "Fzd1","Axin2","Atl1","Itgav","Chst7","Man1a2","Bmper","S1pr5","Arl4d","Pcdh18",
+           "Nfat5","Zeb2","Glis1","Wars2","Gabpa","Lef1","Phc2","Cask","Chek1","Pbx1",
+           "Irx3","Fat3","Atg5",
+		   "Eomes","Fgf8","Otx2","Nanog")
+
+E7.5_genes <- c("Zfhx3","Nasp","Cer1","Ptpra","Rgnef","Runx2","Gfra2","Actc1","Rxra","Tdgf1",
+           "Egfr","Txnrd2","Gys1","Klf12","Dab2","Meox1","Tnnc1",
+		   "Meis1","Hoxb3","Hoxa1","Hoxa3","Foxc2","Aldh1a2","Cited1","Myl7","Hoxb2","Foxc1","Smarcd3")
+		   
+	# Build plotting data frame
+plot_df <- bind_rows(
+  res_df %>% filter(gene_id %in% E6.5_genes) %>%
+    mutate(group = "E6.5 Mesp1+ (Lescroart 2014)"),
+  res_df %>% filter(gene_id %in% E7.5_genes) %>%
+    mutate(group = "E7.5 Mesp1+ (Lescroart 2014)")
+) %>%
+  dplyr::select(gene_id, log2FoldChange = MixedMeso.log2FoldChange, group)
+
+# Plot
+pos <- position_jitter(width = 0.1, seed = 42)
+counts_df <- plot_df %>%
+  group_by(group) %>%
+  summarise(
+    n_up   = sum(log2FoldChange >  1, na.rm = TRUE),
+    n_down = sum(log2FoldChange < -1, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+pdf(file.path(out_dir, "5g-MixedMesoderm_Lescroart_violin_absFCdiff_sup1.5_PlusGenePlot.pdf"), width = 5, height = 5)
+ggplot(plot_df, aes(x = group, y = log2FoldChange, fill = group)) +
+  geom_violin(trim = FALSE, alpha = 0.6, color = NA) +
+  geom_point(aes(color = group), position = pos, size = 1, alpha = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_hline(yintercept =  1, linetype = "dashed", color = "grey70", linewidth = 0.3) +
+  geom_hline(yintercept = -1, linetype = "dashed", color = "grey70", linewidth = 0.3) +
+  geom_text(data = counts_df, aes(x = group, label = paste0("log2FC > 1 = ", n_up),   color = group),
+            y = max(plot_df$log2FoldChange, na.rm = TRUE)+2, vjust = -0.5, size = 3, inherit.aes = FALSE) +
+  geom_text(data = counts_df, aes(x = group, label = paste0("log2FC < 1 = ", n_down), color = group),
+            y = min(plot_df$log2FoldChange, na.rm = TRUE)-1, vjust =  1.5, size = 3, inherit.aes = FALSE) +
+  geom_text_repel(data = filter(plot_df, abs(log2FoldChange) > 1),
+                  aes(label = gene_id, color = group),
+                  position = pos,
+                  size = 2.5, max.overlaps = 30,
+                  min.segment.length = Inf,
+                  segment.size = 0.3) +
+  scale_fill_manual(values  = c("E6.5 Mesp1+ (Lescroart 2014)" = "#0070C0", "E7.5 Mesp1+ (Lescroart 2014)" = "#C2202C")) +
+  scale_color_manual(values = c("E6.5 Mesp1+ (Lescroart 2014)" = "#0070C0", "E7.5 Mesp1+ (Lescroart 2014)" = "#C2202C")) +
+  scale_y_continuous(breaks = sort(unique(c(-1, 0, 1,
+    scales::extended_breaks(n = 5)(range(plot_df$log2FoldChange, na.rm = TRUE))))),
+    expand = expansion(mult = c(0.1, 0.1))) +
+  labs(x = NULL, y = "Log2 Fold Change\n(Late Mixed mesoderm vs Early Mixed mesoderm)") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        panel.grid     = element_blank(),
+        axis.line      = element_line(color = "black"),
+        axis.ticks     = element_line(color = "black"))
+dev.off()
