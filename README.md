@@ -5,7 +5,7 @@
 <sup>2</sup>Department of Medicine, Genetic Medicine, The University of Chicago; Chicago, IL, USA\
 <sup>3</sup>Committee on Development, Regeneration and Stem Cell Biology, The University of Chicago; Chicago, IL, USA
 
-Circulation, 2026, DOI:[10.1161/CIRCULATIONAHA.126.080498](10.1161/CIRCULATIONAHA.126.080498)
+Circulation, 2026, DOI:[10.1161/CIRCULATIONAHA.126.080498]([10.1161/CIRCULATIONAHA.126.080498](https://www.ahajournals.org/doi/10.1161/CIRCULATIONAHA.126.080498))
 ***
 <p align="center">
 <img src="https://github.com/MoskowitzLab/HhHeterochrony_CardiacFields/blob/300a527e4afac435020425bc0fca59c3147be757/Graphical%20abstract.png" width="1000">
